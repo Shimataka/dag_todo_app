@@ -69,5 +69,20 @@
     "coverage-gutters.coverageBaseDir": "${workspaceFolder}/coverage.xml",
     "coverage-gutters.showGutterCoverage": true,
     "coverage-gutters.showLineCoverage": false,
-    "coverage-gutters.showRulerCoverage": false
+    "coverage-gutters.showRulerCoverage": false,
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.autoSearchPaths": true,
+    "cursorpyright.analysis.diagnosticMode": "workspace",
+    "cursorpyright.analysis.diagnosticSeverityOverrides": {
+        "reportMissingParameterType": "error"
+    },
+    "cursorpyright.analysis.exclude": [
+        "${workspaceFolder}/local/*",
+        "${workspaceFolder}/.venv"
+    ],
+    "cursorpyright.analysis.extraPaths": [
+        "${workspaceFolder}/src/"
+    ],
+    "cursorpyright.analysis.typeCheckingMode": "strict",
+    "cursorpyright.analysis.useLibraryCodeForTypes": true
 }

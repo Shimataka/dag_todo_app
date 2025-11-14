@@ -13,7 +13,7 @@
 
 ```yaml
 Task:
-  id: string            # 例: "t_550e8400-e29b-41d4-a716-446655440000"（UUID v4に "t_" 接頭辞）
+  id: string  # 例: "t_550e8400-e29b-41d4-a716-446655440000"（UUID v4に "t_" 接頭辞）
   title: string
   description: string | null
   priority: int         # 高いほど優先（例: 3:高, 2:中, 1:低）
@@ -33,7 +33,12 @@ Edge:
 ```
 
 * **多親・多子OK**（DAG）。サイクルは禁止（検出して拒否）。
-* **IDポリシー**: 既定は **UUID v4**。将来「UUID+日時+ユーザー名」形式の**表示用スラッグ**（例: `t_550e...@2025-11-14@shimataka`）を**別フィールド `slug`**として任意付与可。内部参照は常に `id`（UUID）で行う。**衝突時は再生成**。
+* **IDポリシー**:
+  * 既定は **UUID v4**
+  * 将来「UUID+日時+ユーザー名」形式の**表示用スラッグ**を**別フィールド `slug`**として任意付与可。
+    * 例: `t_550e...@2025-11-14@shimataka`
+  * 内部参照は常に `id`（UUID）で行う。
+  * **衝突時は再生成**。
 
 ### 1.2 表示ソート
 
@@ -150,7 +155,9 @@ CREATE INDEX edges_dst_idx ON edges(dst);
   4. edge(A,C), edge(C,B) を追加（サイクル検証）
 * **多親/多子の場合**:
 
-  * 明示的に **対象エッジを指定**（`--edge A B`）。UIでは「Aの詳細画面で Insert beneath→B を選ぶ」「Bの画面で Insert above←A を選ぶ」など**片側からもエッジが確定**する導線を用意。
+  * 明示的に **対象エッジを指定**（`--edge A B`）
+  * **片側からもエッジが確定**する導線を用意
+    * UIでは「Aの詳細画面で Insert beneath→B を選ぶ」「Bの画面で Insert above←A を選ぶ」など
 
 ### 3.4 連結成分（ツリー）特定
 
@@ -340,7 +347,7 @@ def toggle_archive_tree(store: Storage, seed_id: str, archived: bool):
 
 ## 11. ビルド・依存
 
-* **必須**: Python 3.11+ / **PyYAML** / （SQLiteは標準）
+* **必須**: Python 3.13+ / **PyYAML** / （SQLiteは標準）
 * プライベート豪華版に拡張時:
 
   * Web: FastAPI + Uvicorn、フロントは任意（Cytoscape.js/Graphviz/Mermaid.js 等）
@@ -360,6 +367,6 @@ def toggle_archive_tree(store: Storage, seed_id: str, archived: bool):
 ### まとめ
 
 * **多親・多子DAG**／**厳格ブロック無し**／**「間に挿入」明示エッジ指定**／**木単位アーカイブは `is_archived` で非破壊**。
-* ストレージは **YAML(P yYAML)** と **SQLite** の2ドライバを同一IFで切替。
+* ストレージは **YAML(PyYAML)** と **SQLite** の2ドライバを同一IFで切替。
 * CLIは `blocked-by` を採用、`insert-between --edge A B` を中核操作に。
 * RESTは標準ライブラリで最小実装、のち豪華UIを前面差し替え可能。

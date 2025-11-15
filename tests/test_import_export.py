@@ -31,8 +31,8 @@ class TestImportExport(unittest.TestCase):
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
-        self.store.link("task_a", "task_b")
-        self.store.link("task_b", "task_c")
+        self.store.link_tasks("task_a", "task_b")
+        self.store.link_tasks("task_b", "task_c")
         self.store.save()
 
         # エクスポート(存在しないファイルを使用)

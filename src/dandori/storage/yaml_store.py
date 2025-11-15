@@ -18,12 +18,13 @@ class StoreToYAML(Store):
             with _path.open(encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
                 for tid, td in raw.get("tasks", {}).items():
-                    self._tasks[tid] = Task.from_dict(td)
+                    self.tasks[tid] = Task.from_dict(td)
         else:
-            self._tasks = {}
+            self.tasks = {}
+        self.commit()
 
     def save(self) -> None:
-        raw = {"tasks": {tid: t.to_dict() for tid, t in self._tasks.items()}}
+        raw = {"tasks": {tid: t.to_dict() for tid, t in self.tasks.items()}}
         _path = Path(self.data_path)
         with _path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(raw, f, allow_unicode=True, sort_keys=True)

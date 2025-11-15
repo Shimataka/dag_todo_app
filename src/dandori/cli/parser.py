@@ -36,9 +36,9 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     # 親子リンク
     for pid in args.depends_on or []:
-        st.link(pid, t.id)
+        st.link_tasks(pid, t.id)
     for cid in args.children or []:
-        st.link(t.id, cid)
+        st.link_tasks(t.id, cid)
 
     st.save()
     print(t.id)
@@ -97,7 +97,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    t = st.get(args.id)
+    t = st.get_task(args.id)
     if t.is_err():
         print(f"Error: {t.unwrap_err()}")
         return 1
@@ -108,7 +108,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 def cmd_update(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _t = st.get(args.id)
+    _t = st.get_task(args.id)
     if _t.is_err():
         print(f"Error: {_t.unwrap_err()}")
         return 1
@@ -136,13 +136,13 @@ def cmd_update(args: argparse.Namespace) -> int:
         t.requested_note = args.requested_note
 
     for pid in args.add_parent or []:
-        st.link(pid, t.id)
+        st.link_tasks(pid, t.id)
     for cid in args.add_child or []:
-        st.link(t.id, cid)
+        st.link_tasks(t.id, cid)
     for pid in args.remove_parent or []:
-        st.unlink(pid, t.id)
+        st.unlink_tasks(pid, t.id)
     for cid in args.remove_child or []:
-        st.unlink(t.id, cid)
+        st.unlink_tasks(t.id, cid)
 
     t.updated_at = now_iso()
     st.save()
@@ -182,7 +182,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
 
     new_id = gen_task_id(env["USERNAME"]) if args.id is None else args.id
     new_task = Task(id=new_id, title=args.title, description=args.description or "")
-    st.insert_between(args.a, args.b, new_task)
+    st.insert_task(args.a, args.b, new_task)
     st.save()
     print(new_task.id)
     return 0
@@ -191,7 +191,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
 def cmd_archive(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _ids = st.archive_component(args.id, flag=True)
+    _ids = st.archive_tasks(args.id, flag=True)
     if _ids.is_err():
         print(f"Error: {_ids.unwrap_err()}")
         return 1
@@ -206,7 +206,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
 def cmd_restore(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _ids = st.archive_component(args.id, flag=False)
+    _ids = st.archive_tasks(args.id, flag=False)
     if _ids.is_err():
         print(f"Error: {_ids.unwrap_err()}")
         return 1
@@ -221,7 +221,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
 def cmd_deps(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _t = st.get(args.id)
+    _t = st.get_task(args.id)
     if _t.is_err():
         print(f"Error: {_t.unwrap_err()}")
         return 1
@@ -238,7 +238,7 @@ def cmd_deps(args: argparse.Namespace) -> int:
 def cmd_reason(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _info = st.reason(args.id)
+    _info = st.get_reason(args.id)
     if _info.is_err():
         print(f"Error: {_info.unwrap_err()}")
         return 1

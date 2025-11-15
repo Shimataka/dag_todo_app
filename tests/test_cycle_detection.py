@@ -27,7 +27,7 @@ class TestCycleDetection(unittest.TestCase):
         self.store.save()
 
         # A→Aのリンクを作成しようとするとエラー
-        result = self.store.link("task_a", "task_a")
+        result = self.store.link_tasks("task_a", "task_a")
         assert result.is_err()
         assert "Cycle detected" in result.unwrap_err()
 
@@ -37,11 +37,11 @@ class TestCycleDetection(unittest.TestCase):
         task_b = Task(id="task_b", title="タスクB")
         self.store.add_task(task_a)
         self.store.add_task(task_b)
-        self.store.link("task_a", "task_b")
+        self.store.link_tasks("task_a", "task_b")
         self.store.save()
 
         # B→Aのリンクを作成しようとすると循環が検出される
-        result = self.store.link("task_b", "task_a")
+        result = self.store.link_tasks("task_b", "task_a")
         assert result.is_err()
         assert "Cycle detected" in result.unwrap_err()
 
@@ -53,12 +53,12 @@ class TestCycleDetection(unittest.TestCase):
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
-        self.store.link("task_a", "task_b")
-        self.store.link("task_b", "task_c")
+        self.store.link_tasks("task_a", "task_b")
+        self.store.link_tasks("task_b", "task_c")
         self.store.save()
 
         # C→Aのリンクを作成しようとすると循環が検出される
-        result = self.store.link("task_c", "task_a")
+        result = self.store.link_tasks("task_c", "task_a")
         assert result.is_err()
         assert "Cycle detected" in result.unwrap_err()
 
@@ -70,11 +70,11 @@ class TestCycleDetection(unittest.TestCase):
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
-        self.store.link("task_a", "task_b")
+        self.store.link_tasks("task_a", "task_b")
         self.store.save()
 
         # B→Cのリンクは循環を作らないので成功
-        result = self.store.link("task_b", "task_c")
+        result = self.store.link_tasks("task_b", "task_c")
         assert result.is_ok()
 
 

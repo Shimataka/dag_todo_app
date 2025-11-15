@@ -200,34 +200,35 @@ class Store(ABC):
         """
         match self._weakly_connected_component(task_id):
             case Ok(comp):
-                for tid in comp:
-                    _t = self.get(tid)
-                    if _t.is_err():
-                        return Err[list[str], str](_t.unwrap_err())
-                    t = _t.unwrap()
+                for t in comp:
                     t.is_archived = flag
                     t.updated_at = now_iso()
-                return Ok[list[str], str](list[str](comp))
+                return Ok[list[str], str](list[str]([t.id for t in comp]))
             case Err(e):
                 return Err[list[str], str](e)
             case _:
                 return Err[list[str], str]("Unexpected error")
 
-    def _weakly_connected_component(self, start: str) -> Result[set[str], str]:
+    def _weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+        visited_tasks: list[Task] = []
+
         seen: set[str] = set[str]()
-        stack = [start]
+        stack: list[str] = [start]
         while stack:
             cur = stack.pop()
             if cur in seen:
                 continue
             seen.add(cur)
-            _t = self.get(cur)
-            if _t.is_err():
-                return Err[set[str], str](_t.unwrap_err())
-            t = _t.unwrap()
-            stack.extend(t.children)
-            stack.extend(t.depends_on)
-        return Ok[set[str], str](seen)
+            match self.get(cur):
+                case Ok(t):
+                    visited_tasks.append(t)
+                    stack.extend(t.children)
+                    stack.extend(t.depends_on)
+                case Err(e):
+                    return Err[list[Task], str](e)
+                case _:
+                    return Err[list[Task], str]("Unexpected error")
+        return Ok[list[Task], str](visited_tasks)
 
     # ---- 依存理由表示 (why→reason) ----
 
@@ -268,38 +269,15 @@ class Store(ABC):
             Ok(None): 成功時
             Err(str): 失敗時（例: 循環検出、タスクが見つからない）
         """
-        match self._add_inserted_task(new_task):
-            case Ok(None):
-                pass
-            case Err(e):
-                return Err[None, str](e)
-            case _:
-                return Err[None, str]("Unexpected error")
-        match self._remove_existing_edge(a, b):
-            case Ok(None):
-                pass
-            case Err(e):
-                return Err[None, str](e)
-            case _:
-                return Err[None, str]("Unexpected error")
-        match self._link_inserted_task(a, b, new_task):
-            case Ok(None):
-                pass
-            case Err(e):
-                return Err[None, str](e)
-            case _:
-                return Err[None, str]("Unexpected error")
-        return Ok[None, str](None)
+        return (
+            self._add_inserted_task(new_task)
+            .and_then(lambda _: self._remove_existing_edge(a, b))
+            .and_then(lambda _: self._link_inserted_task(a, b, new_task))
+        )
 
     def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
         # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
-        match self.add_task(new_task):
-            case Ok(None):
-                return Ok[None, str](None)
-            case Err(e):
-                return Err[None, str](e)
-            case _:
-                return Err[None, str]("Unexpected error")
+        return self.add_task(new_task)
 
     def _remove_existing_edge(self, a: str, b: str) -> Result[None, str]:
         # もしA->Bが直結していれば切ってA->new, new->B
@@ -326,13 +304,21 @@ class Store(ABC):
             case Ok(None), Ok(None):
                 return Ok[None, str](None)
             case (Err(e), Ok(None)):
-                self.unlink(new_task.id, b)
-                self.remove(new_task.id)
-                return Err[None, str](e)
+                match (self.unlink(new_task.id, b), self.remove(new_task.id)):
+                    case Ok(None), Ok(None):
+                        return Err[None, str](e)
+                    case (Err(ee), _) | (_, Err(ee)):
+                        return Err[None, str](f"Rollback failed (on {e}):\n{ee}")
+                    case _:
+                        return Err[None, str]("Unexpected error")
             case (Ok(None), Err(e)):
-                self.unlink(a, new_task.id)
-                self.remove(new_task.id)
-                return Err[None, str](e)
+                match (self.unlink(a, new_task.id), self.remove(new_task.id)):
+                    case Ok(None), Ok(None):
+                        return Err[None, str](e)
+                    case (Err(ee), _) | (_, Err(ee)):
+                        return Err[None, str](f"Rollback failed (on {e}):\n{ee}")
+                    case _:
+                        return Err[None, str]("Unexpected error")
             case (Err(e1), Err(e2)):
                 return Err[None, str](f"{e1} or {e2}")
             case _:

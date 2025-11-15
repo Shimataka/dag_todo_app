@@ -144,9 +144,11 @@ class Store(ABC):
             _msg = f"Cycle detected: {parent_id} -> {child_id}"
             return Err[None, str](_msg)
         _p = self.get(parent_id)
+        if _p.is_err():
+            return Err[None, str](_p.unwrap_err())
         _c = self.get(child_id)
-        if _p.is_err() or _c.is_err():
-            return Err[None, str](_p.unwrap_err() or _c.unwrap_err())
+        if _c.is_err():
+            return Err[None, str](_c.unwrap_err())
         p = _p.unwrap()
         c = _c.unwrap()
         if child_id not in p.children:
@@ -170,8 +172,10 @@ class Store(ABC):
         """
         _p = self.get(parent_id)
         _c = self.get(child_id)
-        if _p.is_err() or _c.is_err():
-            return Err[None, str](_p.unwrap_err() or _c.unwrap_err())
+        if _p.is_err():
+            return Err[None, str](_p.unwrap_err())
+        if _c.is_err():
+            return Err[None, str](_c.unwrap_err())
         p = _p.unwrap()
         c = _c.unwrap()
         if child_id in p.children:
@@ -276,8 +280,10 @@ class Store(ABC):
         # もしA->Bが直結していれば切ってA->new, new->B
         _a_t = self.get(a)
         _b_t = self.get(b)
-        if _a_t.is_err() or _b_t.is_err():
-            return Err[None, str](_a_t.unwrap_err() or _b_t.unwrap_err())
+        if _a_t.is_err():
+            return Err[None, str](_a_t.unwrap_err())
+        if _b_t.is_err():
+            return Err[None, str](_b_t.unwrap_err())
         a_t = _a_t.unwrap()
         b_t = _b_t.unwrap()
         if b in a_t.children and a in b_t.depends_on:

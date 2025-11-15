@@ -124,21 +124,11 @@ class StoreToYAML(Store):
         match self.get_task(task_id):
             case Ok(t):
                 for pid in t.depends_on[:]:
-                    match self.unlink_tasks(pid, task_id):
-                        case Ok(None):
-                            continue
-                        case Err(e):
-                            return Err[None, str](e)
-                        case _:
-                            return Err[None, str]("Unexpected error")
+                    if (res := self.unlink_tasks(pid, task_id)).is_err():
+                        return res
                 for cid in t.children[:]:
-                    match self.unlink_tasks(task_id, cid):
-                        case Ok(None):
-                            continue
-                        case Err(e):
-                            return Err[None, str](e)
-                        case _:
-                            return Err[None, str]("Unexpected error")
+                    if (res := self.unlink_tasks(task_id, cid)).is_err():
+                        return res
                 del self.tasks[task_id]
                 return Ok[None, str](None)
             case Err(e):

@@ -185,7 +185,7 @@ src/dandori/
 
 ```python
 Task(
-    id: str                    # UUID形式（例: "t_550e8400-..."）
+    id: str                    # UUID(v4)_日時_ユーザー名形式
     title: str                 # タイトル
     description: str           # 説明
     priority: int              # 優先度（高いほど優先）
@@ -194,7 +194,7 @@ Task(
     status: str                # pending / in_progress / done / requested
     depends_on: list[str]      # 親タスクIDのリスト
     children: list[str]        # 子タスクIDのリスト
-    is_archived: bool         # アーカイブフラグ
+    is_archived: bool          # アーカイブフラグ
     assigned_to: str | None    # 担当者
     requested_by: str | None   # 依頼者
     requested_at: str | None   # 依頼日時

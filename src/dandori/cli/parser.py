@@ -22,6 +22,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     env = load_env()
     st = get_store()
     st.load()
+    st.commit()
 
     tid = gen_task_id(env["USERNAME"]) if args.id is None else args.id
     t = Task(
@@ -32,14 +33,27 @@ def cmd_add(args: argparse.Namespace) -> int:
         start_date=args.start,
         priority=args.priority,
     )
-    st.add_task(t)
+    _res = st.add_task(t)
+    if _res.is_err():
+        st.rollback()
+        print(f"Error: {_res.unwrap_err()}")
+        return 1
 
     # 親子リンク
     for pid in args.depends_on or []:
-        st.link_tasks(pid, t.id)
+        _link_res = st.link_tasks(pid, t.id)
+        if _link_res.is_err():
+            st.rollback()
+            print(f"Error: {_link_res.unwrap_err()}")
+            return 1
     for cid in args.children or []:
-        st.link_tasks(t.id, cid)
+        _link_res = st.link_tasks(t.id, cid)
+        if _link_res.is_err():
+            st.rollback()
+            print(f"Error: {_link_res.unwrap_err()}")
+            return 1
 
+    st.commit()
     st.save()
     print(t.id)
     return 0
@@ -108,8 +122,10 @@ def cmd_show(args: argparse.Namespace) -> int:
 def cmd_update(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    st.commit()
     _t = st.get_task(args.id)
     if _t.is_err():
+        st.rollback()
         print(f"Error: {_t.unwrap_err()}")
         return 1
     t = _t.unwrap()
@@ -136,15 +152,32 @@ def cmd_update(args: argparse.Namespace) -> int:
         t.requested_note = args.requested_note
 
     for pid in args.add_parent or []:
-        st.link_tasks(pid, t.id)
+        _link_res = st.link_tasks(pid, t.id)
+        if _link_res.is_err():
+            st.rollback()
+            print(f"Error: {_link_res.unwrap_err()}")
+            return 1
     for cid in args.add_child or []:
-        st.link_tasks(t.id, cid)
+        _link_res = st.link_tasks(t.id, cid)
+        if _link_res.is_err():
+            st.rollback()
+            print(f"Error: {_link_res.unwrap_err()}")
+            return 1
     for pid in args.remove_parent or []:
-        st.unlink_tasks(pid, t.id)
+        _unlink_res = st.unlink_tasks(pid, t.id)
+        if _unlink_res.is_err():
+            st.rollback()
+            print(f"Error: {_unlink_res.unwrap_err()}")
+            return 1
     for cid in args.remove_child or []:
-        st.unlink_tasks(t.id, cid)
+        _unlink_res = st.unlink_tasks(t.id, cid)
+        if _unlink_res.is_err():
+            st.rollback()
+            print(f"Error: {_unlink_res.unwrap_err()}")
+            return 1
 
     t.updated_at = now_iso()
+    st.commit()
     st.save()
     print(f"updated: {t.id}")
     return 0
@@ -178,11 +211,17 @@ def cmd_done(args: argparse.Namespace) -> int:
 def cmd_insert(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    st.commit()
     env = load_env()
 
     new_id = gen_task_id(env["USERNAME"]) if args.id is None else args.id
     new_task = Task(id=new_id, title=args.title, description=args.description or "")
-    st.insert_task(args.a, args.b, new_task)
+    _res = st.insert_task(args.a, args.b, new_task)
+    if _res.is_err():
+        st.rollback()
+        print(f"Error: {_res.unwrap_err()}")
+        return 1
+    st.commit()
     st.save()
     print(new_task.id)
     return 0
@@ -191,11 +230,14 @@ def cmd_insert(args: argparse.Namespace) -> int:
 def cmd_archive(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    st.commit()
     _ids = st.archive_tasks(args.id, flag=True)
     if _ids.is_err():
+        st.rollback()
         print(f"Error: {_ids.unwrap_err()}")
         return 1
     ids = _ids.unwrap()
+    st.commit()
     st.save()
     print("archived:")
     for i in ids:
@@ -206,11 +248,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
 def cmd_restore(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    st.commit()
     _ids = st.archive_tasks(args.id, flag=False)
     if _ids.is_err():
+        st.rollback()
         print(f"Error: {_ids.unwrap_err()}")
         return 1
     ids = _ids.unwrap()
+    st.commit()
     st.save()
     print("restored:")
     for i in ids:
@@ -293,8 +338,10 @@ def cmd_export(args: argparse.Namespace) -> int:
 def cmd_import(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    st.commit()
     _tasks = st.get_all_tasks()
     if _tasks.is_err():
+        st.rollback()
         print(f"Error: {_tasks.unwrap_err()}")
         return 1
     tasks = _tasks.unwrap()
@@ -306,8 +353,10 @@ def cmd_import(args: argparse.Namespace) -> int:
             continue
         _res = st.add_task(t, id_overwritten=tid)
         if _res.is_err():
+            st.rollback()
             print(f"Error: {_res.unwrap_err()}")
             return 1
+    st.commit()
     st.save()
     print(f"imported from {args.path}")
     return 0

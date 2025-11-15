@@ -100,7 +100,7 @@ class StoreToYAML(Store):
 
     # ---- アーカイブ (弱連結成分単位) ----
 
-    def archive_component(self, task_id: str, flag: bool) -> Result[list[str], str]:  # noqa: FBT001
+    def archive_component(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
         comp = self._weakly_connected_component(task_id)
         if comp.is_err():
             return Err[list[str], str](comp.unwrap_err())

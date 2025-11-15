@@ -37,7 +37,6 @@ class Store(ABC):
         env = load_env()
         self.data_path = data_path or env["DATA_PATH"]
         self.archive_path = archive_path or env["ARCHIVE_PATH"]
-        self._tasks: dict[str, Task] = {}
 
     @abstractmethod
     def load(self) -> None:
@@ -55,22 +54,22 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    # ---- データ操作 ----
+
     @abstractmethod
-    def add_task(self, task: Task, *, id_overwritten: str | None = None) -> Result[None, str]:
-        """タスクを追加する。
-
-        Args:
-            task: 追加するタスク
-            id_overwritten: タスクIDを上書きする場合に指定
-
-        Returns:
-            Ok(None): 成功時
-            Err(str): 失敗時（例: 既に存在するID）
-        """
+    def commit(self) -> None:
+        """変更を永続化する"""
         raise NotImplementedError
 
     @abstractmethod
-    def get(self, task_id: str) -> Result[Task, str]:
+    def rollback(self) -> None:
+        """変更を破棄する"""
+        raise NotImplementedError
+
+    # ---- データ取得 ----
+
+    @abstractmethod
+    def get_task(self, task_id: str) -> Result[Task, str]:
         """タスクIDでタスクを取得する。
 
         Args:
@@ -92,8 +91,24 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    # ---- タスク操作 ----
+
     @abstractmethod
-    def remove(self, task_id: str) -> Result[None, str]:
+    def add_task(self, task: Task, *, id_overwritten: str | None = None) -> Result[None, str]:
+        """タスクを追加する。
+
+        Args:
+            task: 追加するタスク
+            id_overwritten: タスクIDを上書きする場合に指定
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: 既に存在するID）
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def remove_task(self, task_id: str) -> Result[None, str]:
         """タスクを削除する。
 
         タスクを削除する際、関連する依存関係（親子リンク）も自動的に削除されます。
@@ -108,7 +123,7 @@ class Store(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def link(self, parent_id: str, child_id: str) -> Result[None, str]:
+    def link_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を追加する（parent -> child）。
 
         循環が検出された場合はエラーを返します。
@@ -124,7 +139,7 @@ class Store(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def unlink(self, parent_id: str, child_id: str) -> Result[None, str]:
+    def unlink_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を削除する。
 
         Args:
@@ -137,8 +152,10 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    # ---- アーカイブ (弱連結成分単位) ----
+
     @abstractmethod
-    def archive_component(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
+    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
         """弱連結成分単位でアーカイブ状態を切り替える。
 
         指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
@@ -154,8 +171,10 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    # ---- 依存理由表示 (why→reason) ----
+
     @abstractmethod
-    def reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
         """タスクの依存関係情報を取得する。
 
         Args:
@@ -167,8 +186,10 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    # ---- 挿入機能 A -> (new) -> B ----
+
     @abstractmethod
-    def insert_between(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
         """既存のエッジA->Bの間に新しいタスクを挿入する。
 
         既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。

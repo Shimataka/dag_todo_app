@@ -29,17 +29,17 @@ class TestArchiveComponent(unittest.TestCase):
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
-        self.store.link("task_a", "task_b")
-        self.store.link("task_b", "task_c")
+        self.store.link_tasks("task_a", "task_b")
+        self.store.link_tasks("task_b", "task_c")
         self.store.save()
 
         # 初期状態ではアーカイブされていない
-        assert self.store.get("task_a").unwrap().is_archived is False
-        assert self.store.get("task_b").unwrap().is_archived is False
-        assert self.store.get("task_c").unwrap().is_archived is False
+        assert self.store.get_task("task_a").unwrap().is_archived is False
+        assert self.store.get_task("task_b").unwrap().is_archived is False
+        assert self.store.get_task("task_c").unwrap().is_archived is False
 
         # task_bを含む弱連結成分をアーカイブ
-        archive_result = self.store.archive_component("task_b", flag=True)
+        archive_result = self.store.archive_tasks("task_b", flag=True)
         assert archive_result.is_ok()
         archived_ids = archive_result.unwrap()
         self.store.save()
@@ -49,9 +49,9 @@ class TestArchiveComponent(unittest.TestCase):
         assert "task_b" in archived_ids
         assert "task_c" in archived_ids
 
-        assert self.store.get("task_a").unwrap().is_archived is True
-        assert self.store.get("task_b").unwrap().is_archived is True
-        assert self.store.get("task_c").unwrap().is_archived is True
+        assert self.store.get_task("task_a").unwrap().is_archived is True
+        assert self.store.get_task("task_b").unwrap().is_archived is True
+        assert self.store.get_task("task_c").unwrap().is_archived is True
 
     def test_archive_component_does_not_affect_disconnected_tasks(self) -> None:
         """連結していないタスクはアーカイブされないことを確認"""
@@ -62,11 +62,11 @@ class TestArchiveComponent(unittest.TestCase):
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
-        self.store.link("task_a", "task_b")
+        self.store.link_tasks("task_a", "task_b")
         self.store.save()
 
         # task_aを含む弱連結成分をアーカイブ
-        archive_result = self.store.archive_component("task_a", flag=True)
+        archive_result = self.store.archive_tasks("task_a", flag=True)
         assert archive_result.is_ok()
         archived_ids = archive_result.unwrap()
         self.store.save()
@@ -76,9 +76,9 @@ class TestArchiveComponent(unittest.TestCase):
         assert "task_b" in archived_ids
         assert "task_c" not in archived_ids
 
-        assert self.store.get("task_a").unwrap().is_archived is True
-        assert self.store.get("task_b").unwrap().is_archived is True
-        assert self.store.get("task_c").unwrap().is_archived is False
+        assert self.store.get_task("task_a").unwrap().is_archived is True
+        assert self.store.get_task("task_b").unwrap().is_archived is True
+        assert self.store.get_task("task_c").unwrap().is_archived is False
 
     def test_unarchive_component_restores_connected_tasks(self) -> None:
         """弱連結成分の全タスクが復元されることを確認"""
@@ -87,11 +87,11 @@ class TestArchiveComponent(unittest.TestCase):
         task_b = Task(id="task_b", title="タスクB", is_archived=True)
         self.store.add_task(task_a)
         self.store.add_task(task_b)
-        self.store.link("task_a", "task_b")
+        self.store.link_tasks("task_a", "task_b")
         self.store.save()
 
         # 復元
-        restore_result = self.store.archive_component("task_a", flag=False)
+        restore_result = self.store.archive_tasks("task_a", flag=False)
         assert restore_result.is_ok()
         restored_ids = restore_result.unwrap()
         self.store.save()
@@ -100,8 +100,8 @@ class TestArchiveComponent(unittest.TestCase):
         assert "task_a" in restored_ids
         assert "task_b" in restored_ids
 
-        assert self.store.get("task_a").unwrap().is_archived is False
-        assert self.store.get("task_b").unwrap().is_archived is False
+        assert self.store.get_task("task_a").unwrap().is_archived is False
+        assert self.store.get_task("task_b").unwrap().is_archived is False
 
 
 if __name__ == "__main__":

@@ -29,25 +29,25 @@ class TestInsertBetween(unittest.TestCase):
         self.store.add_task(task_b)
 
         # A→Bのリンクを作成
-        link_result = self.store.link("task_a", "task_b")
+        link_result = self.store.link_tasks("task_a", "task_b")
         assert link_result.is_ok()
         self.store.save()
 
         # A→Bのリンクが存在することを確認
-        task_a_result = self.store.get("task_a")
+        task_a_result = self.store.get_task("task_a")
         assert task_a_result.is_ok()
         assert "task_b" in task_a_result.unwrap().children
 
         # CをAとBの間に挿入
         task_c = Task(id="task_c", title="タスクC")
-        insert_result = self.store.insert_between("task_a", "task_b", task_c)
+        insert_result = self.store.insert_task("task_a", "task_b", task_c)
         assert insert_result.is_ok()
         self.store.save()
 
         # A→C→Bの構造になっていることを確認
-        task_a_updated = self.store.get("task_a").unwrap()
-        task_c_updated = self.store.get("task_c").unwrap()
-        task_b_updated = self.store.get("task_b").unwrap()
+        task_a_updated = self.store.get_task("task_a").unwrap()
+        task_c_updated = self.store.get_task("task_c").unwrap()
+        task_b_updated = self.store.get_task("task_b").unwrap()
 
         # Aの子はCである
         assert "task_c" in task_a_updated.children
@@ -72,14 +72,14 @@ class TestInsertBetween(unittest.TestCase):
 
         # CをAとBの間に挿入(エッジがなくても動作)
         task_c = Task(id="task_c", title="タスクC")
-        insert_result = self.store.insert_between("task_a", "task_b", task_c)
+        insert_result = self.store.insert_task("task_a", "task_b", task_c)
         assert insert_result.is_ok()
         self.store.save()
 
         # A→C→Bの構造になっていることを確認
-        task_a_updated = self.store.get("task_a").unwrap()
-        task_c_updated = self.store.get("task_c").unwrap()
-        task_b_updated = self.store.get("task_b").unwrap()
+        task_a_updated = self.store.get_task("task_a").unwrap()
+        task_c_updated = self.store.get_task("task_c").unwrap()
+        task_b_updated = self.store.get_task("task_b").unwrap()
 
         assert "task_c" in task_a_updated.children
         assert "task_a" in task_c_updated.depends_on

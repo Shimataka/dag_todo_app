@@ -1,3 +1,5 @@
+import copy
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
@@ -11,6 +13,8 @@ from dandori.util.time import now_iso
 class StoreToYAML(Store):
     def __init__(self, data_path: str | None = None) -> None:
         super().__init__(data_path)
+        self._tasks: dict[str, Task] = {}
+        self._tmp_tasks: dict[str, Task] = {}
 
     # ---- 基本IO ----
 
@@ -20,168 +24,344 @@ class StoreToYAML(Store):
             with _path.open(encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
                 for tid, td in raw.get("tasks", {}).items():
-                    self._tasks[tid] = Task.from_dict(td)
+                    self.tasks[tid] = Task.from_dict(td)
         else:
-            self._tasks = {}
+            self.tasks = {}
 
     def save(self) -> None:
-        raw = {"tasks": {tid: t.to_dict() for tid, t in self._tasks.items()}}
+        raw = {"tasks": {tid: t.to_dict() for tid, t in self.tasks.items()}}
         _path = Path(self.data_path)
         with _path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(raw, f, allow_unicode=True, sort_keys=True)
 
-    # ---- タスク操作 ----
+    # ---- データ操作 ----
 
-    def add_task(self, task: Task, *, id_overwritten: str | None = None) -> Result[None, str]:
-        if id_overwritten is not None:
-            task.id = id_overwritten
-        if task.id in self._tasks:
-            return Err[None, str](f"Task already exists: {task.id}")
-        self._tasks[task.id] = task
-        return Ok[None, str](None)
+    @property
+    def tasks(self) -> dict[str, Task]:
+        return self._tmp_tasks
 
-    def get(self, task_id: str) -> Result[Task, str]:
-        t = self._tasks.get(task_id)
-        if not t:
+    @tasks.setter
+    def tasks(self, value: dict[str, Task]) -> None:
+        self._tmp_tasks = value
+
+    def commit(self) -> None:
+        """変更を永続化する。
+
+        内部の_tasks辞書の内容を永続化します。
+        """
+        self._tasks = copy.deepcopy(self._tmp_tasks)
+
+    def rollback(self) -> None:
+        """変更を破棄する。
+
+        内部の_tasks辞書の内容を破棄します。
+        """
+        self._tmp_tasks = copy.deepcopy(self._tasks)
+
+    # ---- データ取得 ----
+
+    def get_task(self, task_id: str) -> Result[Task, str]:
+        """タスクIDでタスクを取得する。
+
+        Args:
+            task_id: 取得するタスクのID
+
+        Returns:
+            Ok(Task): 成功時
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        t = self.tasks.get(task_id)
+        if t is None:
             _msg = f"Task not found: {task_id}"
             return Err[Task, str](_msg)
         return Ok[Task, str](t)
 
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
-        return Ok[dict[str, Task], str](self._tasks)
+        """全タスクを取得する。
 
-    def remove(self, task_id: str) -> Result[None, str]:
-        match self.get(task_id):
+        Returns:
+            Ok(dict[str, Task]): 成功時（タスクIDをキーとする辞書）
+            Err(str): 失敗時
+        """
+        return Ok[dict[str, Task], str](self.tasks)
+
+    # ---- タスク操作 ----
+
+    def add_task(self, task: Task, *, id_overwritten: str | None = None) -> Result[None, str]:
+        """タスクを追加する。
+
+        Args:
+            task: 追加するタスク
+            id_overwritten: タスクIDを上書きする場合に指定
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: 既に存在するID）
+        """
+        if id_overwritten is not None:
+            task.id = id_overwritten
+        match self.get_all_tasks():
+            case Ok(tasks):
+                if task.id in tasks:
+                    return Err[None, str](f"Task already exists: {task.id}")
+                self.tasks[task.id] = task
+                return Ok[None, str](None)
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def remove_task(self, task_id: str) -> Result[None, str]:
+        """タスクを削除する。
+
+        タスクを削除する際、関連する依存関係（親子リンク）も自動的に削除されます。
+
+        Args:
+            task_id: 削除するタスクのID
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match self.get_task(task_id):
             case Ok(t):
-                for pid in t.depends_on:
-                    self.unlink(pid, task_id)
-                for cid in t.children:
-                    self.unlink(task_id, cid)
-                del self._tasks[task_id]
+                for pid in t.depends_on[:]:
+                    if (res := self.unlink_tasks(pid, task_id)).is_err():
+                        return res
+                for cid in t.children[:]:
+                    if (res := self.unlink_tasks(task_id, cid)).is_err():
+                        return res
+                del self.tasks[task_id]
                 return Ok[None, str](None)
             case Err(e):
                 return Err[None, str](e)
             case _:
                 return Err[None, str]("Unexpected error")
 
-    def link(self, parent_id: str, child_id: str) -> Result[None, str]:
-        # 循環検出
-        if self._creates_cycle(parent_id, child_id):
-            _msg = f"Cycle detected: {parent_id} -> {child_id}"
-            return Err[None, str](_msg)
-        _p = self.get(parent_id)
-        _c = self.get(child_id)
-        if _p.is_err() or _c.is_err():
-            return Err[None, str](_p.unwrap_err() or _c.unwrap_err())
-        p = _p.unwrap()
-        c = _c.unwrap()
-        if child_id not in p.children:
-            p.children.append(child_id)
-        if parent_id not in c.depends_on:
-            c.depends_on.append(parent_id)
-        p.updated_at = now_iso()
-        c.updated_at = now_iso()
-        return Ok[None, str](None)
+    def link_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
+        """タスク間の依存関係を追加する（parent -> child）。
 
-    def unlink(self, parent_id: str, child_id: str) -> Result[None, str]:
-        _p = self.get(parent_id)
-        _c = self.get(child_id)
-        if _p.is_err() or _c.is_err():
-            return Err[None, str](_p.unwrap_err() or _c.unwrap_err())
-        p = _p.unwrap()
-        c = _c.unwrap()
-        if child_id in p.children:
-            p.children.remove(child_id)
-        if parent_id in c.depends_on:
-            c.depends_on.remove(parent_id)
-        p.updated_at = now_iso()
-        c.updated_at = now_iso()
-        return Ok[None, str](None)
+        循環が検出された場合はエラーを返します。
+
+        Args:
+            parent_id: 親タスクのID
+            child_id: 子タスクのID
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: 循環検出、タスクが見つからない）
+        """
+        # 循環検出
+        match self._has_task_cycle(parent_id, child_id):
+            case Ok(True):
+                _msg = f"Cycle detected: {parent_id} -> {child_id}"
+                return Err[None, str](_msg)
+            case Ok(False):
+                pass
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+        match (self.get_task(parent_id), self.get_task(child_id)):
+            case (Ok(p), Ok(c)):
+                if child_id not in p.children:
+                    p.children.append(child_id)
+                if parent_id not in c.depends_on:
+                    c.depends_on.append(parent_id)
+                p.updated_at = now_iso()
+                c.updated_at = now_iso()
+                return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def unlink_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
+        """タスク間の依存関係を削除する。
+
+        Args:
+            parent_id: 親タスクのID
+            child_id: 子タスクのID
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match (self.get_task(parent_id), self.get_task(child_id)):
+            case (Ok(p), Ok(c)):
+                if child_id in p.children:
+                    p.children.remove(child_id)
+                if parent_id in c.depends_on:
+                    c.depends_on.remove(parent_id)
+                p.updated_at = now_iso()
+                c.updated_at = now_iso()
+                return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
 
     # ---- アーカイブ (弱連結成分単位) ----
 
-    def archive_component(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
-        comp = self._weakly_connected_component(task_id)
-        if comp.is_err():
-            return Err[list[str], str](comp.unwrap_err())
-        comp = comp.unwrap()
-        for tid in comp:
-            _t = self.get(tid)
-            if _t.is_err():
-                return Err[list[str], str](_t.unwrap_err())
-            t = _t.unwrap()
-            t.is_archived = flag
-            t.updated_at = now_iso()
-        return Ok[list[str], str](list[str](comp))
+    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を切り替える。
 
-    def _weakly_connected_component(self, start: str) -> Result[set[str], str]:
+        指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
+        全タスクのis_archivedフラグを一括更新します。
+
+        Args:
+            task_id: 起点となるタスクのID
+            flag: Trueでアーカイブ、Falseで復元
+
+        Returns:
+            Ok(list[str]): 成功時（更新されたタスクIDのリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match self._weakly_connected_component(task_id):
+            case Ok(comp):
+                for t in comp:
+                    t.is_archived = flag
+                    t.updated_at = now_iso()
+                return Ok[list[str], str]([t.id for t in comp])
+            case Err(e):
+                return Err[list[str], str](e)
+            case _:
+                return Err[list[str], str]("Unexpected error")
+
+    def _weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+        visited_tasks: list[Task] = []
+
         seen: set[str] = set[str]()
-        stack = [start]
+        stack: list[str] = [start]
         while stack:
             cur = stack.pop()
             if cur in seen:
                 continue
             seen.add(cur)
-            _t = self.get(cur)
-            if _t.is_err():
-                return Err[set[str], str](_t.unwrap_err())
-            t = _t.unwrap()
-            stack.extend(t.children)
-            stack.extend(t.depends_on)
-        return Ok[set[str], str](seen)
+            match self.get_task(cur):
+                case Ok(t):
+                    visited_tasks.append(t)
+                    stack.extend(t.children)
+                    stack.extend(t.depends_on)
+                case Err(e):
+                    return Err[list[Task], str](e)
+                case _:
+                    return Err[list[Task], str]("Unexpected error")
+        return Ok[list[Task], str](visited_tasks)
 
     # ---- 依存理由表示 (why→reason) ----
 
-    def reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
-        _t = self.get(task_id)
-        if _t.is_err():
-            return Err[dict[str, list[str]], str](_t.unwrap_err())
-        t = _t.unwrap()
-        return Ok[dict[str, list[str]], str](
-            {
-                "task": [t.title],
-                "depends_on": [self.get(pid).unwrap().title for pid in t.depends_on],
-                "children": [self.get(cid).unwrap().title for cid in t.children],
-            },
-        )
+    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+        """タスクの依存関係情報を取得する。
+
+        Args:
+            task_id: 対象タスクのID
+
+        Returns:
+            Ok(dict): 成功時（{"task": [...], "depends_on": [...], "children": [...]}）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match self.get_task(task_id):
+            case Ok(t):
+                deps = [
+                    self.get_task(pid).map_or(lambda task: task.title, f"<{pid} not found>") for pid in t.depends_on
+                ]
+                chil = [self.get_task(cid).map_or(lambda task: task.title, f"<{cid} not found>") for cid in t.children]
+                return Ok[dict[str, list[str]], str]({"task": [t.title], "depends_on": deps, "children": chil})
+            case Err(e):
+                return Err[dict[str, list[str]], str](e)
+            case _:
+                return Err[dict[str, list[str]], str]("Unexpected error")
 
     # ---- 挿入機能 A -> (new) -> B ----
 
-    def insert_between(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+        """既存のエッジA->Bの間に新しいタスクを挿入する。
+
+        既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。
+        エッジが存在しない場合でも、A->new_task->Bのリンクを作成します。
+
+        Args:
+            a: 親タスクのID
+            b: 子タスクのID
+            new_task: 挿入する新しいタスク
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: 循環検出、タスクが見つからない）
+        """
+        match (
+            self._add_inserted_task(new_task)
+            .and_then(lambda _: self._remove_existing_edge(a, b))
+            .and_then(lambda _: self._link_inserted_task(a, b, new_task))
+        ):
+            case Ok(None):
+                return Ok[None, str](None)
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
         # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
-        _res = self.add_task(new_task)
-        if _res.is_err():
-            return Err[None, str](_res.unwrap_err())
+        return self.add_task(new_task)
 
+    def _remove_existing_edge(self, a: str, b: str) -> Result[None, str]:
         # もしA->Bが直結していれば切ってA->new, new->B
-        _a_t = self.get(a)
-        _b_t = self.get(b)
-        if _a_t.is_err() or _b_t.is_err():
-            return Err[None, str](_a_t.unwrap_err() or _b_t.unwrap_err())
-        a_t = _a_t.unwrap()
-        b_t = _b_t.unwrap()
-        if b in a_t.children and a in b_t.depends_on:
-            _res = self.unlink(a, b)
-            if _res.is_err():
-                return Err[None, str](_res.unwrap_err())
+        match (self.get_task(a), self.get_task(b)):
+            case (Ok(a_t), Ok(b_t)):
+                if b in a_t.children and a in b_t.depends_on:
+                    return self.unlink_tasks(a, b)
+                return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
 
+    def _link_inserted_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
         # A->new, new->B を確実に張る
-        _a = self.link(a, new_task.id)
-        _b = self.link(new_task.id, b)
-        if _a.is_err() or _b.is_err():
-            _a_res = self.unlink(a, new_task.id)
-            _b_res = self.unlink(new_task.id, b)
-            if _a_res.is_err() or _b_res.is_err():
-                return Err[None, str](f"Failed to rollback on error: {_a_res.unwrap_err() or _b_res.unwrap_err()}")
-            _res = self.remove(new_task.id)
-            if _res.is_err():
-                return Err[None, str](f"Failed to remove new task: {_res.unwrap_err()}")
-            return Err[None, str](f"Failed to link: {_a.unwrap_err() or _b.unwrap_err() or 'Unknown error'}")
-        return Ok[None, str](None)
+        match (self.link_tasks(a, new_task.id), self.link_tasks(new_task.id, b)):
+            case Ok(None), Ok(None):
+                return Ok[None, str](None)
+            case (Err(e), Ok(None)):
+                return self._rollback_on_error(
+                    e,
+                    lambda: self.unlink_tasks(
+                        new_task.id,
+                        b,
+                    ).and_then(
+                        lambda _: self.remove_task(new_task.id),
+                    ),
+                )
+            case (Ok(None), Err(e)):
+                return self._rollback_on_error(
+                    e,
+                    lambda: self.unlink_tasks(
+                        a,
+                        new_task.id,
+                    ).and_then(
+                        lambda _: self.remove_task(new_task.id),
+                    ),
+                )
+            case (Err(e1), Err(e2)):
+                return Err[None, str](f"Failed to link to parent: {e1}, and failed to link to child: {e2}")
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def _rollback_on_error(
+        self,
+        error_message: str,
+        rollback_fn: Callable[[], Result[None, str]],
+    ) -> Result[None, str]:
+        match rollback_fn():
+            case Ok(None):
+                return Err[None, str](error_message)
+            case Err(ee):
+                return Err[None, str](f"Rollback failed (on {error_message}):\n{ee}")
+            case _:
+                return Err[None, str]("Unexpected error")
 
     # ---- 循環検出 ----
 
-    def _creates_cycle(self, parent_id: str, child_id: str) -> bool:
+    def _has_task_cycle(self, parent_id: str, child_id: str) -> Result[bool, str]:
         seen: set[str] = set[str]()
         stack = [child_id]
         while stack:
@@ -190,10 +370,12 @@ class StoreToYAML(Store):
                 continue
             seen.add(cur)
             if cur == parent_id:
-                return True
-            _t = self.get(cur)
-            if _t.is_err():
-                continue
-            t = _t.unwrap()
-            stack.extend(t.children)
-        return False
+                return Ok[bool, str](value=True)
+            match self.get_task(cur):
+                case Ok(t):
+                    stack.extend(t.children)
+                case Err(e):
+                    return Err[bool, str](e)
+                case _:
+                    return Err[bool, str]("Unexpected error")
+        return Ok[bool, str](value=False)

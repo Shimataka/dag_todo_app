@@ -41,7 +41,7 @@ class TestStoreBasic(unittest.TestCase):
         assert tasks["test_task_1"].title == "テストタスク"
 
         # 3. showで個別取得
-        task_result = self.store.get("test_task_1")
+        task_result = self.store.get_task("test_task_1")
         assert task_result.is_ok()
         retrieved_task = task_result.unwrap()
         assert retrieved_task.id == "test_task_1"
@@ -62,7 +62,7 @@ class TestStoreBasic(unittest.TestCase):
 
     def test_get_nonexistent_task_fails(self) -> None:
         """存在しないタスクを取得しようとするとエラーになる"""
-        result = self.store.get("nonexistent_id")
+        result = self.store.get_task("nonexistent_id")
         assert result.is_err()
         assert "not found" in result.unwrap_err()
 

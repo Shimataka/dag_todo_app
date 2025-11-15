@@ -1,12 +1,21 @@
 from collections import deque
+from typing import Literal
 
 from dandori.core.models import Task
+from dandori.util.time import now_iso
 
 
-def task_sort_key(t: Task) -> tuple[int, str, str, str]:
+def task_sort_key(
+    t: Task,
+    *,
+    order_with_no_start: Literal["now", "end_of_time"] = "now",
+) -> tuple[int, str, str, str]:
     # priority 降順 → start_date(or now扱い) → created_at → id
-    # startが無いものはnow扱い→後置きしたい場合は調整(9999-12-31T23:59:59)
-    start = t.start_date or "9999-12-31T23:59:59"
+    # startが無いものはnow扱いか、後置きしたい場合は調整(9999-12-31T23:59:59)にする
+    if order_with_no_start == "now":
+        start = t.start_date or now_iso()
+    elif order_with_no_start == "end_of_time":
+        start = "9999-12-31T23:59:59"
     return (-t.priority, start, t.created_at, t.id)
 
 

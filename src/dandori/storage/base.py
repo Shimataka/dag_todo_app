@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from pyresults import Err, Ok, Result
 
@@ -303,15 +304,8 @@ class Store(ABC):
         match (self.get(a), self.get(b)):
             case (Ok(a_t), Ok(b_t)):
                 if b in a_t.children and a in b_t.depends_on:
-                    match self.unlink(a, b):
-                        case Ok(None):
-                            return Ok[None, str](None)
-                        case Err(e):
-                            return Err[None, str](e)
-                        case _:
-                            return Err[None, str]("Unexpected error")
-                else:
-                    return Ok[None, str](None)
+                    return self.unlink(a, b)
+                return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
                 return Err[None, str](e)
             case _:
@@ -323,23 +317,40 @@ class Store(ABC):
             case Ok(None), Ok(None):
                 return Ok[None, str](None)
             case (Err(e), Ok(None)):
-                match (self.unlink(new_task.id, b), self.remove(new_task.id)):
-                    case Ok(None), Ok(None):
-                        return Err[None, str](e)
-                    case (Err(ee), _) | (_, Err(ee)):
-                        return Err[None, str](f"Rollback failed (on {e}):\n{ee}")
-                    case _:
-                        return Err[None, str]("Unexpected error")
+                return self._rollback_on_error(
+                    e,
+                    lambda: self.unlink(
+                        new_task.id,
+                        b,
+                    ).and_then(
+                        lambda _: self.remove(new_task.id),
+                    ),
+                )
             case (Ok(None), Err(e)):
-                match (self.unlink(a, new_task.id), self.remove(new_task.id)):
-                    case Ok(None), Ok(None):
-                        return Err[None, str](e)
-                    case (Err(ee), _) | (_, Err(ee)):
-                        return Err[None, str](f"Rollback failed (on {e}):\n{ee}")
-                    case _:
-                        return Err[None, str]("Unexpected error")
+                return self._rollback_on_error(
+                    e,
+                    lambda: self.unlink(
+                        a,
+                        new_task.id,
+                    ).and_then(
+                        lambda _: self.remove(new_task.id),
+                    ),
+                )
             case (Err(e1), Err(e2)):
                 return Err[None, str](f"{e1} or {e2}")
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def _rollback_on_error(
+        self,
+        error_message: str,
+        rollback_fn: Callable[[], Result[None, str]],
+    ) -> Result[None, str]:
+        match rollback_fn():
+            case Ok(None):
+                return Err[None, str](error_message)
+            case Err(ee):
+                return Err[None, str](f"Rollback failed (on {error_message}):\n{ee}")
             case _:
                 return Err[None, str]("Unexpected error")
 

@@ -115,9 +115,9 @@ class Store(ABC):
         """
         match self.get(task_id):
             case Ok(t):
-                for pid in t.depends_on:
+                for pid in list[str](t.depends_on):
                     self.unlink(pid, task_id)
-                for cid in t.children:
+                for cid in list[str](t.children):
                     self.unlink(task_id, cid)
                 del self._tasks[task_id]
                 return Ok[None, str](None)
@@ -143,21 +143,19 @@ class Store(ABC):
         if self._creates_cycle(parent_id, child_id):
             _msg = f"Cycle detected: {parent_id} -> {child_id}"
             return Err[None, str](_msg)
-        _p = self.get(parent_id)
-        if _p.is_err():
-            return Err[None, str](_p.unwrap_err())
-        _c = self.get(child_id)
-        if _c.is_err():
-            return Err[None, str](_c.unwrap_err())
-        p = _p.unwrap()
-        c = _c.unwrap()
-        if child_id not in p.children:
-            p.children.append(child_id)
-        if parent_id not in c.depends_on:
-            c.depends_on.append(parent_id)
-        p.updated_at = now_iso()
-        c.updated_at = now_iso()
-        return Ok[None, str](None)
+        match (self.get(parent_id), self.get(child_id)):
+            case (Ok(p), Ok(c)):
+                if child_id not in p.children:
+                    p.children.append(child_id)
+                if parent_id not in c.depends_on:
+                    c.depends_on.append(parent_id)
+                p.updated_at = now_iso()
+                c.updated_at = now_iso()
+                return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
 
     def unlink(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を削除する。
@@ -170,21 +168,19 @@ class Store(ABC):
             Ok(None): 成功時
             Err(str): 失敗時（例: タスクが見つからない）
         """
-        _p = self.get(parent_id)
-        _c = self.get(child_id)
-        if _p.is_err():
-            return Err[None, str](_p.unwrap_err())
-        if _c.is_err():
-            return Err[None, str](_c.unwrap_err())
-        p = _p.unwrap()
-        c = _c.unwrap()
-        if child_id in p.children:
-            p.children.remove(child_id)
-        if parent_id in c.depends_on:
-            c.depends_on.remove(parent_id)
-        p.updated_at = now_iso()
-        c.updated_at = now_iso()
-        return Ok[None, str](None)
+        match (self.get(parent_id), self.get(child_id)):
+            case (Ok(p), Ok(c)):
+                if child_id in p.children:
+                    p.children.remove(child_id)
+                if parent_id in c.depends_on:
+                    c.depends_on.remove(parent_id)
+                p.updated_at = now_iso()
+                c.updated_at = now_iso()
+                return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
 
     # ---- アーカイブ (弱連結成分単位) ----
 
@@ -202,18 +198,20 @@ class Store(ABC):
             Ok(list[str]): 成功時（更新されたタスクIDのリスト）
             Err(str): 失敗時（例: タスクが見つからない）
         """
-        comp = self._weakly_connected_component(task_id)
-        if comp.is_err():
-            return Err[list[str], str](comp.unwrap_err())
-        comp = comp.unwrap()
-        for tid in comp:
-            _t = self.get(tid)
-            if _t.is_err():
-                return Err[list[str], str](_t.unwrap_err())
-            t = _t.unwrap()
-            t.is_archived = flag
-            t.updated_at = now_iso()
-        return Ok[list[str], str](list[str](comp))
+        match self._weakly_connected_component(task_id):
+            case Ok(comp):
+                for tid in comp:
+                    _t = self.get(tid)
+                    if _t.is_err():
+                        return Err[list[str], str](_t.unwrap_err())
+                    t = _t.unwrap()
+                    t.is_archived = flag
+                    t.updated_at = now_iso()
+                return Ok[list[str], str](list[str](comp))
+            case Err(e):
+                return Err[list[str], str](e)
+            case _:
+                return Err[list[str], str]("Unexpected error")
 
     def _weakly_connected_component(self, start: str) -> Result[set[str], str]:
         seen: set[str] = set[str]()
@@ -243,19 +241,15 @@ class Store(ABC):
             Ok(dict): 成功時（{"task": [...], "depends_on": [...], "children": [...]}）
             Err(str): 失敗時（例: タスクが見つからない）
         """
-        _t = self.get(task_id)
-        if _t.is_err():
-            return Err[dict[str, list[str]], str](_t.unwrap_err())
-        t = _t.unwrap()
-        deps = [self.get(pid).map_or(lambda task: task.title, f"<{pid} not found>") for pid in t.depends_on]
-        chil = [self.get(cid).map_or(lambda task: task.title, f"<{cid} not found>") for cid in t.children]
-        return Ok[dict[str, list[str]], str](
-            {
-                "task": [t.title],
-                "depends_on": deps,
-                "children": chil,
-            },
-        )
+        match self.get(task_id):
+            case Ok(t):
+                deps = [self.get(pid).map_or(lambda task: task.title, f"<{pid} not found>") for pid in t.depends_on]
+                chil = [self.get(cid).map_or(lambda task: task.title, f"<{cid} not found>") for cid in t.children]
+                return Ok[dict[str, list[str]], str]({"task": [t.title], "depends_on": deps, "children": chil})
+            case Err(e):
+                return Err[dict[str, list[str]], str](e)
+            case _:
+                return Err[dict[str, list[str]], str]("Unexpected error")
 
     # ---- 挿入機能 A -> (new) -> B ----
 
@@ -274,36 +268,75 @@ class Store(ABC):
             Ok(None): 成功時
             Err(str): 失敗時（例: 循環検出、タスクが見つからない）
         """
-        # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
-        _res = self.add_task(new_task)
-        if _res.is_err():
-            return Err[None, str](_res.unwrap_err())
-
-        # もしA->Bが直結していれば切ってA->new, new->B
-        _a_t = self.get(a)
-        _b_t = self.get(b)
-        if _a_t.is_err():
-            return Err[None, str](_a_t.unwrap_err())
-        if _b_t.is_err():
-            return Err[None, str](_b_t.unwrap_err())
-        a_t = _a_t.unwrap()
-        b_t = _b_t.unwrap()
-        if b in a_t.children and a in b_t.depends_on:
-            _res = self.unlink(a, b)
-            if _res.is_err():
-                return Err[None, str](_res.unwrap_err())
-
-        # A->new, new->B を確実に張る
-        _a = self.link(a, new_task.id)
-        if _a.is_err():
-            self.remove(new_task.id)
-            return Err[None, str](_a.unwrap_err())
-        _b = self.link(new_task.id, b)
-        if _b.is_err():
-            self.unlink(a, new_task.id)
-            self.remove(new_task.id)
-            return Err[None, str](_b.unwrap_err())
+        match self._add_inserted_task(new_task):
+            case Ok(None):
+                pass
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+        match self._remove_existing_edge(a, b):
+            case Ok(None):
+                pass
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+        match self._link_inserted_task(a, b, new_task):
+            case Ok(None):
+                pass
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
         return Ok[None, str](None)
+
+    def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
+        # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
+        match self.add_task(new_task):
+            case Ok(None):
+                return Ok[None, str](None)
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def _remove_existing_edge(self, a: str, b: str) -> Result[None, str]:
+        # もしA->Bが直結していれば切ってA->new, new->B
+        match (self.get(a), self.get(b)):
+            case (Ok(a_t), Ok(b_t)):
+                if b in a_t.children and a in b_t.depends_on:
+                    match self.unlink(a, b):
+                        case Ok(None):
+                            return Ok[None, str](None)
+                        case Err(e):
+                            return Err[None, str](e)
+                        case _:
+                            return Err[None, str]("Unexpected error")
+                else:
+                    return Ok[None, str](None)
+            case (Err(e), _) | (_, Err(e)):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
+
+    def _link_inserted_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+        # A->new, new->B を確実に張る
+        match (self.link(a, new_task.id), self.link(new_task.id, b)):
+            case Ok(None), Ok(None):
+                return Ok[None, str](None)
+            case (Err(e), Ok(None)):
+                self.unlink(new_task.id, b)
+                self.remove(new_task.id)
+                return Err[None, str](e)
+            case (Ok(None), Err(e)):
+                self.unlink(a, new_task.id)
+                self.remove(new_task.id)
+                return Err[None, str](e)
+            case (Err(e1), Err(e2)):
+                return Err[None, str](f"{e1} or {e2}")
+            case _:
+                return Err[None, str]("Unexpected error")
 
     # ---- 循環検出 ----
 

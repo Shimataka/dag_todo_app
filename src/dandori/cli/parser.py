@@ -191,7 +191,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
 def cmd_archive(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _ids = st.archive_component(args.id, True)  # noqa: FBT003
+    _ids = st.archive_component(args.id, flag=True)
     if _ids.is_err():
         print(f"Error: {_ids.unwrap_err()}")
         return 1
@@ -206,7 +206,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
 def cmd_restore(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _ids = st.archive_component(args.id, False)  # noqa: FBT003
+    _ids = st.archive_component(args.id, flag=False)
     if _ids.is_err():
         print(f"Error: {_ids.unwrap_err()}")
         return 1

@@ -145,23 +145,18 @@ class Store(ABC):
                         case Ok(None):
                             continue
                         case Err(e):
-                            self.rollback()
                             return Err[None, str](e)
                         case _:
-                            self.rollback()
                             return Err[None, str]("Unexpected error")
                 for cid in t.children[:]:
                     match self.unlink_tasks(task_id, cid):
                         case Ok(None):
                             continue
                         case Err(e):
-                            self.rollback()
                             return Err[None, str](e)
                         case _:
-                            self.rollback()
                             return Err[None, str]("Unexpected error")
                 del self.tasks[task_id]
-                self.commit()
                 return Ok[None, str](None)
             case Err(e):
                 return Err[None, str](e)
@@ -200,7 +195,6 @@ class Store(ABC):
                     c.depends_on.append(parent_id)
                 p.updated_at = now_iso()
                 c.updated_at = now_iso()
-                self.commit()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
                 return Err[None, str](e)
@@ -226,7 +220,6 @@ class Store(ABC):
                     c.depends_on.remove(parent_id)
                 p.updated_at = now_iso()
                 c.updated_at = now_iso()
-                self.commit()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
                 return Err[None, str](e)
@@ -254,7 +247,6 @@ class Store(ABC):
                 for t in comp:
                     t.is_archived = flag
                     t.updated_at = now_iso()
-                self.commit()
                 return Ok[list[str], str]([t.id for t in comp])
             case Err(e):
                 return Err[list[str], str](e)
@@ -329,13 +321,10 @@ class Store(ABC):
             .and_then(lambda _: self._link_inserted_task(a, b, new_task))
         ):
             case Ok(None):
-                self.commit()
                 return Ok[None, str](None)
             case Err(e):
-                self.rollback()
                 return Err[None, str](e)
             case _:
-                self.rollback()
                 return Err[None, str]("Unexpected error")
 
     def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
@@ -380,7 +369,7 @@ class Store(ABC):
                     ),
                 )
             case (Err(e1), Err(e2)):
-                return Err[None, str](f"{e1} or {e2}")
+                return Err[None, str](f"Failed to link to parent: {e1}, and failed to link to child: {e2}")
             case _:
                 return Err[None, str]("Unexpected error")
 

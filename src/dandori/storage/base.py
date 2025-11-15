@@ -293,22 +293,14 @@ class Store(ABC):
 
         # A->new, new->B を確実に張る
         _a = self.link(a, new_task.id)
+        if _a.is_err():
+            self.remove(new_task.id)
+            return Err[None, str](_a.unwrap_err())
         _b = self.link(new_task.id, b)
-        if _a.is_err() or _b.is_err():
-            _a_res = self.unlink(a, new_task.id)
-            _b_res = self.unlink(new_task.id, b)
-            if _a_res.is_err() or _b_res.is_err():
-                return Err[None, str](
-                    f"Failed to rollback on error: {_a_res.unwrap_err() or _b_res.unwrap_err()}",
-                )
-            _res = self.remove(new_task.id)
-            if _res.is_err():
-                return Err[None, str](
-                    f"Failed to remove new task: {_res.unwrap_err()}",
-                )
-            return Err[None, str](
-                f"Failed to link: {_a.unwrap_err() or _b.unwrap_err() or 'Unknown error'}",
-            )
+        if _b.is_err():
+            self.unlink(a, new_task.id)
+            self.remove(new_task.id)
+            return Err[None, str](_b.unwrap_err())
         return Ok[None, str](None)
 
     # ---- 循環検出 ----

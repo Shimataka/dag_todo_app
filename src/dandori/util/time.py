@@ -2,6 +2,8 @@ import zoneinfo
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from pyresults import Err, Ok, Result
+
 if TYPE_CHECKING:
     from dandori.core.models import Task
 
@@ -14,10 +16,10 @@ def now_iso() -> str:
     return datetime.now(JST).strftime(ISO_FMT)
 
 
-def format_requested_sla(t: "Task") -> str:
+def format_requested_sla(t: "Task") -> Result[str, str]:
     base = ""
     if not t.requested_at:
-        return base
+        return Ok[str, str](base)
     try:
         req = datetime.strptime(t.requested_at, ISO_FMT).astimezone(JST)
         delta = datetime.now(JST) - req
@@ -25,7 +27,7 @@ def format_requested_sla(t: "Task") -> str:
         hours = delta.seconds // 3600
         base += f"+{days}d{hours}h"  # 依頼からの経過時間
     except Exception as e:  # noqa: BLE001
-        base += f"???h{e!s}"
+        return Err[str, str](f"???h{e!s}")
 
     if t.due_date:
         try:
@@ -35,5 +37,5 @@ def format_requested_sla(t: "Task") -> str:
             rhours = max(0, remain.seconds // 3600)
             base += f" / SLA:{rdays}d{rhours}h"
         except Exception as e:  # noqa: BLE001
-            base += f" / SLA:???{e!s}"
-    return base
+            return Err[str, str](f" / SLA:???{e!s}")
+    return Ok[str, str](base)

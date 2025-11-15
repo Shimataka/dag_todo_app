@@ -88,7 +88,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         tag = "[" + ",".join(marks) + "]" if marks else " "
         assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
         sla = format_requested_sla(t)
-        extra = f" ({sla})" if sla else ""
+        extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
         print(f"{tag} {t.id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
 
     return 0

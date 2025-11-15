@@ -5,6 +5,7 @@ import sys
 
 from dandori.core.models import Task
 from dandori.core.sort import task_sort_key, topo_sort
+from dandori.core.validate import detect_cycles, detect_inconsistencies
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
@@ -129,6 +130,10 @@ def cmd_update(args: argparse.Namespace) -> int:
         t.assigned_to = args.assign_to
     if args.requested_by is not None:
         t.requested_by = args.requested_by
+    if args.requested_at is not None:
+        t.requested_at = args.requested_at
+    if args.requested_note is not None:
+        t.requested_note = args.requested_note
 
     for pid in args.add_parent or []:
         st.link(pid, t.id)
@@ -146,18 +151,28 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 
 def cmd_done(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    _t = st.get(args.id)
-    if _t.is_err():
-        print(f"Error: {_t.unwrap_err()}")
-        return 1
-    t = _t.unwrap()
-    t.status = "done"
-    t.updated_at = now_iso()
-    st.save()
-    print(f"done: {t.id}")
-    return 0
+    # done は update --status done のラッパー
+    update_args = argparse.Namespace(
+        id=args.id,
+        title=None,
+        description=None,
+        due=None,
+        start=None,
+        priority=None,
+        status="done",
+        assign_to=None,
+        requested_by=None,
+        requested_at=None,
+        requested_note=None,
+        add_parent=None,
+        add_child=None,
+        remove_parent=None,
+        remove_child=None,
+    )
+    result = cmd_update(update_args)
+    if result == 0:
+        print(f"done: {args.id}")
+    return result
 
 
 def cmd_insert(args: argparse.Namespace) -> int:
@@ -236,24 +251,30 @@ def cmd_reason(args: argparse.Namespace) -> int:
 
 
 def cmd_request(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    _t = st.get(args.id)
-    if _t.is_err():
-        print(f"Error: {_t.unwrap_err()}")
-        return 1
-    t = _t.unwrap()
+    # request は update --status requested --assign-to ... のラッパー
     env = load_env()
-    t.status = "requested"
-    t.assigned_to = args.assignee
-    t.requested_by = args.requester or env.get("USERNAME", "anonymous")
-    if args.note:
-        t.requested_note = f"[request-note] {args.note}"
-    t.requested_at = now_iso()
-    t.updated_at = now_iso()
-    st.save()
-    print(f"requested: {t.id} -> {t.assigned_to}")
-    return 0
+    requested_note = f"[request-note] {args.note}" if args.note else None
+    update_args = argparse.Namespace(
+        id=args.id,
+        title=None,
+        description=None,
+        due=None,
+        start=None,
+        priority=None,
+        status="requested",
+        assign_to=args.assignee,
+        requested_by=args.requester or env.get("USERNAME", "anonymous"),
+        requested_at=now_iso(),
+        requested_note=requested_note,
+        add_parent=None,
+        add_child=None,
+        remove_parent=None,
+        remove_child=None,
+    )
+    result = cmd_update(update_args)
+    if result == 0:
+        print(f"requested: {args.id} -> {args.assignee}")
+    return result
 
 
 def cmd_export(args: argparse.Namespace) -> int:
@@ -289,6 +310,46 @@ def cmd_import(args: argparse.Namespace) -> int:
             return 1
     st.save()
     print(f"imported from {args.path}")
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:  # noqa: ARG001
+    st = get_store()
+    st.load()
+    _tasks = st.get_all_tasks()
+    if _tasks.is_err():
+        print(f"Error: {_tasks.unwrap_err()}")
+        return 1
+    tasks = _tasks.unwrap()
+
+    has_errors = False
+
+    # サイクル検出
+    cycles = detect_cycles(tasks)
+    if cycles:
+        has_errors = True
+        print("Cycles detected:")
+        for cycle in cycles:
+            print(f"  {' -> '.join(cycle)}")
+    else:
+        print("No cycles detected.")
+
+    # 不整合検出
+    inconsistencies = detect_inconsistencies(tasks)
+    if inconsistencies:
+        has_errors = True
+        print("\nInconsistencies detected:")
+        for tid, issue_type, related_id in inconsistencies:
+            if issue_type == "missing_child":
+                print(f"  {tid} has depends_on[{related_id}] but {related_id} doesn't have {tid} in children")
+            elif issue_type == "missing_parent":
+                print(f"  {tid} has children[{related_id}] but {related_id} doesn't have {tid} in depends_on")
+    else:
+        print("\nNo inconsistencies detected.")
+
+    if has_errors:
+        return 1
+    print("\nDAG is valid.")
     return 0
 
 
@@ -334,6 +395,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--status")
     sp.add_argument("--assign-to")
     sp.add_argument("--requested-by")
+    sp.add_argument("--requested-at")
+    sp.add_argument("--requested-note")
     sp.add_argument("--add-parent", nargs="*")
     sp.add_argument("--add-child", nargs="*")
     sp.add_argument("--remove-parent", nargs="*")
@@ -389,6 +452,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("import", help="import from json")
     sp.add_argument("path")
     sp.set_defaults(func=cmd_import)
+
+    # check
+    sp = sub.add_parser("check", help="check DAG for cycles and inconsistencies")
+    sp.set_defaults(func=cmd_check)
 
     return p
 

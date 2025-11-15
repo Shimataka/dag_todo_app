@@ -1,7 +1,9 @@
 import zoneinfo
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from dandori.core.models import Task
+if TYPE_CHECKING:
+    from dandori.core.models import Task
 
 ISO_FMT = "%Y-%m-%dT%H:%M:%S"
 JST = zoneinfo.ZoneInfo("Asia/Tokyo")
@@ -12,7 +14,7 @@ def now_iso() -> str:
     return datetime.now(JST).strftime(ISO_FMT)
 
 
-def format_requested_sla(t: Task) -> str:
+def format_requested_sla(t: "Task") -> str:
     base = ""
     if not t.requested_at:
         return base

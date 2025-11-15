@@ -116,9 +116,21 @@ class Store(ABC):
         match self.get(task_id):
             case Ok(t):
                 for pid in list[str](t.depends_on):
-                    self.unlink(pid, task_id)
+                    match self.unlink(pid, task_id):
+                        case Ok(None):
+                            continue
+                        case Err(e):
+                            return Err[None, str](e)
+                        case _:
+                            return Err[None, str]("Unexpected error")
                 for cid in list[str](t.children):
-                    self.unlink(task_id, cid)
+                    match self.unlink(task_id, cid):
+                        case Ok(None):
+                            continue
+                        case Err(e):
+                            return Err[None, str](e)
+                        case _:
+                            return Err[None, str]("Unexpected error")
                 del self._tasks[task_id]
                 return Ok[None, str](None)
             case Err(e):
@@ -140,9 +152,16 @@ class Store(ABC):
             Err(str): 失敗時（例: 循環検出、タスクが見つからない）
         """
         # 循環検出
-        if self._creates_cycle(parent_id, child_id):
-            _msg = f"Cycle detected: {parent_id} -> {child_id}"
-            return Err[None, str](_msg)
+        match self._has_task_cycle(parent_id, child_id):
+            case Ok(True):
+                _msg = f"Cycle detected: {parent_id} -> {child_id}"
+                return Err[None, str](_msg)
+            case Ok(False):
+                pass
+            case Err(e):
+                return Err[None, str](e)
+            case _:
+                return Err[None, str]("Unexpected error")
         match (self.get(parent_id), self.get(child_id)):
             case (Ok(p), Ok(c)):
                 if child_id not in p.children:
@@ -326,7 +345,7 @@ class Store(ABC):
 
     # ---- 循環検出 ----
 
-    def _creates_cycle(self, parent_id: str, child_id: str) -> bool:
+    def _has_task_cycle(self, parent_id: str, child_id: str) -> Result[bool, str]:
         seen: set[str] = set[str]()
         stack = [child_id]
         while stack:
@@ -335,10 +354,12 @@ class Store(ABC):
                 continue
             seen.add(cur)
             if cur == parent_id:
-                return True
-            _t = self.get(cur)
-            if _t.is_err():
-                continue
-            t = _t.unwrap()
-            stack.extend(t.children)
-        return False
+                return Ok[bool, str](value=True)
+            match self.get(cur):
+                case Ok(t):
+                    stack.extend(t.children)
+                case Err(e):
+                    return Err[bool, str](e)
+                case _:
+                    return Err[bool, str]("Unexpected error")
+        return Ok[bool, str](value=False)

@@ -1,3 +1,5 @@
+from collections import deque
+
 from dandori.core.models import Task
 
 
@@ -11,12 +13,12 @@ def task_sort_key(t: Task) -> tuple[int, str, str, str]:
 def topo_sort(tasks: dict[str, Task]) -> list[Task]:
     # Kahn法(is_archivedは無視して全体順序を返す)
     indeg = {tid: len(t.depends_on) for tid, t in tasks.items()}
-    q = [tasks[tid] for tid, d in indeg.items() if d == 0]
+    q = deque[Task]([tasks[tid] for tid, d in indeg.items() if d == 0])
     res: list[Task] = []
     seen: set[str] = set[str]()
 
     while q:
-        t = q.pop(0)
+        t = q.popleft()
         if t.id in seen:
             continue
         seen.add(t.id)

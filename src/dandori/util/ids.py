@@ -1,8 +1,7 @@
 import uuid
-import zoneinfo
 from datetime import datetime
 
-JST = zoneinfo.ZoneInfo("Asia/Tokyo")
+from dandori.util.time import JST
 
 
 def gen_task_id(username: str) -> str:

@@ -247,11 +247,13 @@ class Store(ABC):
         if _t.is_err():
             return Err[dict[str, list[str]], str](_t.unwrap_err())
         t = _t.unwrap()
+        deps = [self.get(pid).map_or(lambda task: task.title, f"<{pid} not found>") for pid in t.depends_on]
+        chil = [self.get(cid).map_or(lambda task: task.title, f"<{cid} not found>") for cid in t.children]
         return Ok[dict[str, list[str]], str](
             {
                 "task": [t.title],
-                "depends_on": [self.get(pid).unwrap().title for pid in t.depends_on],
-                "children": [self.get(cid).unwrap().title for cid in t.children],
+                "depends_on": deps,
+                "children": chil,
             },
         )
 

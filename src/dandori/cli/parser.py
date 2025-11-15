@@ -293,13 +293,13 @@ def cmd_export(args: argparse.Namespace) -> int:
 def cmd_import(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
+    _tasks = st.get_all_tasks()
+    if _tasks.is_err():
+        print(f"Error: {_tasks.unwrap_err()}")
+        return 1
+    tasks = _tasks.unwrap()
     incoming = import_json(args.path)
     for tid, t in incoming.items():
-        _tasks = st.get_all_tasks()
-        if _tasks.is_err():
-            print(f"Error: {_tasks.unwrap_err()}")
-            return 1
-        tasks = _tasks.unwrap()
         if tid in tasks:
             # 衝突ポリシー: ID重複は上書きせずスキップ (ログ表示)
             print(f"skip (exists): {tid}")

@@ -1,12 +1,14 @@
 import os
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from dandori.core import ops
+
+JST = timezone(timedelta(hours=9))
 
 
 class TestOps(unittest.TestCase):
@@ -145,7 +147,7 @@ class TestOps(unittest.TestCase):
     def test_add_task_with_dates(self) -> None:
         """日付を指定してタスクを追加できることを確認"""
         start = date(2024, 1, 1)
-        due = datetime(2024, 12, 31, 23, 59, 59)  # noqa: DTZ001
+        due = datetime(2024, 12, 31, 23, 59, 59, tzinfo=JST)
         task = ops.add_task([], "タスク", start=start, due=due)
         assert task.start_date == "2024-01-01"
         assert task.due_date == "2024-12-31T23:59:59"
@@ -214,7 +216,7 @@ class TestOps(unittest.TestCase):
     def test_set_requested(self) -> None:
         """タスクを requested 状態に変更できることを確認"""
         task = ops.add_task([], "タスク")
-        due = datetime(2024, 12, 31, 23, 59, 59)  # noqa: DTZ001
+        due = datetime(2024, 12, 31, 23, 59, 59, tzinfo=JST)
         updated = ops.set_requested(
             task.id,
             requested_to="assignee",
@@ -230,7 +232,11 @@ class TestOps(unittest.TestCase):
 
     def test_set_requested_without_due(self) -> None:
         """Due なしでタスクを requested 状態に変更できることを確認"""
-        task = ops.add_task([], "タスク", due=datetime(2024, 1, 1, 0, 0, 0))  # noqa: DTZ001
+        task = ops.add_task(
+            [],
+            "タスク",
+            due=datetime(2024, 1, 1, 0, 0, 0, tzinfo=JST),
+        )
         updated = ops.set_requested(task.id, requested_to="assignee", due=None)
         assert updated.status == "requested"
         assert updated.assigned_to == "assignee"

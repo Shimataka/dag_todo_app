@@ -212,9 +212,9 @@ def set_status(task_id: str, status: Status) -> Task:
 def set_requested(
     task_id: str,
     *,
-    requested_to: str,
-    due: datetime | None,
-    note: str = "",
+    requested_to: str | None = None,
+    due: datetime | None = None,
+    note: str | None = None,
     requested_by: str | None = None,
 ) -> Task:
     """Requested 状態への変更と request 情報の設定をまとめて行うユースケース。
@@ -226,7 +226,7 @@ def set_requested(
       - due が渡されれば due_date を上書き（SLA 扱い）
     """
     env = load_env()
-    requester = requested_by or env.get("USERNAME", "anonymous")
+    requested_by = requested_by or env.get("USERNAME", "anonymous")
 
     st = _get_store()
     st.load()
@@ -238,15 +238,19 @@ def set_requested(
         raise OpsError(_msg)
     t: Task = _task.unwrap()
 
-    t.status = "requested"
-    t.assigned_to = requested_to
-    t.requested_by = requester
-    t.requested_at = now_iso()
-    t.requested_note = f"[request-note] {note}" if note else None
-
+    if requested_to is not None:
+        t.assigned_to = requested_to
+    if note is not None:
+        t.requested_note = f"[request-note] {note}"
     if due is not None:
         t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
+    if requested_by is not None:
+        t.requested_by = requested_by
 
+    t.status = "requested"
+    t.requested_at = now_iso() if t.requested_at is None else t.requested_at
+    if requested_by is not None:
+        t.requested_by = requested_by
     t.updated_at = now_iso()
 
     st.commit()
@@ -334,6 +338,7 @@ def insert_between(
     title: str,
     description: str = "",
     priority: int | None = None,
+    overwrite_id_by: str | None = None,
 ) -> Task:
     """Parent -> child 間に新しいタスクを挿入するユースケース。
 
@@ -348,18 +353,6 @@ def insert_between(
     st.load()
     st.commit()
 
-    # 存在チェック
-    tasks = st.get_all_tasks().unwrap_or(default={})
-    if parent_id not in tasks:
-        _msg = f"Parent task not found: {parent_id}"
-        raise OpsError(_msg)
-    if child_id not in tasks:
-        _msg = f"Child task not found: {child_id}"
-        raise OpsError(_msg)
-
-    # 子が本当に parent の children に含まれているかまでは
-    # 必須ではないが、チェックしてもよい (MVPではスキップも可) 。
-
     # 新タスク作成
     tid = gen_task_id(username)
     new_task = Task(
@@ -368,27 +361,15 @@ def insert_between(
         description=description or "",
         priority=priority or 0,
     )
-    add_res = st.add_task(new_task)
-    if add_res.is_err():
+    _res = st.insert_task(
+        parent_id,
+        child_id,
+        new_task,
+        id_overwritten=overwrite_id_by,
+    )
+    if _res.is_err():
         st.rollback()
-        raise OpsError(add_res.unwrap_err())
-
-    # parent -> child を外し、parent -> new -> child に付け替え
-    unlink_res = st.unlink_tasks(parent_id, child_id)
-    if unlink_res.is_err():
-        st.rollback()
-        raise OpsError(unlink_res.unwrap_err())
-
-    link_res1 = st.link_tasks(parent_id, new_task.id)
-    if link_res1.is_err():
-        st.rollback()
-        raise OpsError(link_res1.unwrap_err())
-
-    link_res2 = st.link_tasks(new_task.id, child_id)
-    if link_res2.is_err():
-        st.rollback()
-        raise OpsError(link_res2.unwrap_err())
-
+        raise OpsError(_res.unwrap_err())
     new_task.updated_at = now_iso()
     st.commit()
     st.save()

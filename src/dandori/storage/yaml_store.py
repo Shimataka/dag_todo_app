@@ -308,7 +308,14 @@ class StoreToYAML(Store):
 
     # ---- 挿入機能 A -> (new) -> B ----
 
-    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(
+        self,
+        a: str,
+        b: str,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         """既存のエッジA->Bの間に新しいタスクを挿入する。
 
         既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。
@@ -318,13 +325,14 @@ class StoreToYAML(Store):
             a: 親タスクのID
             b: 子タスクのID
             new_task: 挿入する新しいタスク
+            id_overwritten: 新しいタスクのIDを上書きする場合に指定
 
         Returns:
             Ok(None): 成功時
             Err(str): 失敗時（例: 循環検出、タスクが見つからない）
         """
         match (
-            self._add_inserted_task(new_task)
+            self._add_inserted_task(new_task, id_overwritten=id_overwritten)
             .and_then(lambda _: self._remove_existing_edge(a, b))
             .and_then(lambda _: self._link_inserted_task(a, b, new_task))
         ):
@@ -335,9 +343,14 @@ class StoreToYAML(Store):
             case _:
                 return Err[None, str]("Unexpected error")
 
-    def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
+    def _add_inserted_task(
+        self,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
-        return self.add_task(new_task)
+        return self.add_task(new_task, id_overwritten=id_overwritten)
 
     def _remove_existing_edge(self, a: str, b: str) -> Result[None, str]:
         # もしA->Bが直結していれば切ってA->new, new->B

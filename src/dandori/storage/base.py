@@ -225,7 +225,14 @@ class Store(ABC):
     # ---- 挿入機能 A -> (new) -> B ----
 
     @abstractmethod
-    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(
+        self,
+        a: str,
+        b: str,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         """既存のエッジA->Bの間に新しいタスクを挿入する。
 
         既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。
@@ -235,6 +242,7 @@ class Store(ABC):
             a: 親タスクのID
             b: 子タスクのID
             new_task: 挿入する新しいタスク
+            id_overwritten: 新しいタスクのIDを上書きする場合に指定
 
         Returns:
             Ok(None): 成功時

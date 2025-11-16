@@ -35,111 +35,8 @@ pip install -e .
 
 ## 基本的な使い方
 
-### タスクの追加
-
-```bash
-# 基本的なタスク追加
-dandori add "タスクのタイトル" --description "説明" --priority 2
-
-# 依存関係を指定して追加
-dandori add "子タスク" --depends-on <親タスクID1> <親タスクID2>
-
-# 期限と開始日を指定
-dandori add "タスク" --due 2025-12-31 --start 2025-01-01
-```
-
-### タスクの一覧表示
-
-```bash
-# 全タスクを表示
-dandori list
-
-# フィルタリング
-dandori list --status done
-dandori list --archived true
-dandori list --query "キーワード"
-
-# 詳細表示
-dandori list --details
-
-# トポロジカル順で表示
-dandori list --topo
-```
-
-### タスクの表示・更新
-
-```bash
-# タスクの詳細表示
-dandori show <TASK_ID>
-
-# タスクの更新
-dandori update <TASK_ID> --title "新しいタイトル" --status in_progress --priority 3
-
-# 完了マーク
-dandori done <TASK_ID>
-```
-
-### 依存関係の管理
-
-```bash
-# 依存関係の表示
-dandori deps <TASK_ID>
-
-# 依存関係の説明（なぜこのタスクがブロックされているか）
-dandori reason <TASK_ID>
-
-# エッジの追加（updateコマンドで代替可能）
-dandori update <TASK_ID> --add-parent <親ID>
-
-# エッジの削除
-dandori update <TASK_ID> --remove-parent <親ID>
-```
-
-### 間に挿入
-
-既存のエッジ（A→B）に対して新タスクCを挿入し、A→C→Bに変換：
-
-```bash
-dandori insert <A_ID> <B_ID> --title "挿入するタスク" --description "説明"
-```
-
-### アーカイブ
-
-連結成分（ツリー）単位でアーカイブ/復元：
-
-```bash
-# アーカイブ
-dandori archive <TASK_ID>
-
-# 復元
-dandori restore <TASK_ID>
-```
-
-### エクスポート/インポート
-
-```bash
-# JSON形式でエクスポート
-dandori export tasks.json
-
-# JSON形式でインポート（ID衝突時はスキップ）
-dandori import tasks.json
-```
-
-### 依頼機能
-
-タスクを他者に依頼：
-
-```bash
-dandori request <TASK_ID> --to <担当者名> --by <依頼者名> --note "メモ"
-```
-
-### 整合性チェック
-
-DAGのサイクルや不整合を検出：
-
-```bash
-dandori check
-```
+- CLI コマンドの使い方は [CLI コマンド](docs/cli.md) を参照。
+- TUI の使い方は [TUI](docs/tui.md) を参照。
 
 ## アーキテクチャ
 
@@ -149,13 +46,14 @@ dandori check
 src/dandori/
   core/           # ドメインモデルとコアロジック
     models.py     # Task/Edge のデータクラス
+    ops.py        # コア操作ロジック
     sort.py       # ソート処理
     validate.py   # サイクル検出・整合性チェック
   storage/        # ストレージ層
     base.py       # Storage インターフェース
     yaml_store.py # YAML実装
-  cli/            # CLI実装
-    parser.py     # コマンドパーサー
+  interfaces/     # 外部インターフェース
+    cli.py        # CLI実装
   io/             # 入出力
     json_io.py    # JSONエクスポート/インポート
     std_io.py     # 標準出力フォーマット
@@ -172,12 +70,17 @@ src/dandori/
 
 - `load()`: グラフを読み込み
 - `save()`: グラフを保存
+- `get_task()`: タスク取得
+- `get_all_tasks()`: 全タスク取得
 - `add_task()`: タスク追加
-- `update_task()`: タスク更新
-- `get()`: タスク取得
-- `link()` / `unlink()`: エッジの追加/削除
-- `archive_component()`: 連結成分のアーカイブ
-- `insert_between()`: 間に挿入操作
+- `remove_task()`: タスク削除
+- `link_tasks()`: エッジの追加
+- `unlink_tasks()`: エッジの削除
+- `archive_tasks()`: 連結成分のアーカイブ
+- `unarchive_tasks()`: 連結成分の復元
+- `weakly_connected_component()`: 弱連結成分の取得
+- `get_dependency_info()`: 依存関係情報の取得
+- `insert_task()`: 間に挿入操作
 
 ## データモデル
 
@@ -191,7 +94,8 @@ Task(
     priority: int              # 優先度（高いほど優先）
     due_date: str | None       # 期限
     start_date: str | None     # 開始日
-    status: str                # pending / in_progress / done / requested
+    status: str                # status
+    # pending / in_progress / done / requested / removed
     depends_on: list[str]      # 親タスクIDのリスト
     children: list[str]        # 子タスクIDのリスト
     is_archived: bool          # アーカイブフラグ
@@ -201,6 +105,8 @@ Task(
     requested_note: str | None # 依頼メモ
     created_at: str            # 作成日時
     updated_at: str            # 更新日時
+    tags: list[str]            # タグのリスト
+    metadata: dict[str, Any]   # メタデータの辞書
 )
 ```
 
@@ -241,7 +147,8 @@ ruff check src/
 
 - [x] テスト & リファクタリング
 - [x] 共有・配布フロー（JSONテンプレ・インポートモード）
-- [ ] TUI / REST API への足がかり
+- [ ] TUI 実装
+- [ ] REST API 実装
 
 ## ライセンス
 

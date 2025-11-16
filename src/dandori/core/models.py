@@ -22,6 +22,8 @@ class Task:
     requested_by: str | None = None
     requested_at: str | None = None
     requested_note: str | None = None
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -296,24 +296,32 @@ def get_deps(task_id: str) -> list[Task]:
     """指定タスクが依存している親タスク一覧を返すユースケース。"""
     st = _get_store()
     st.load()
-    tasks = st.get_all_tasks().unwrap_or(default={})
-    t = tasks.get(task_id)
-    if t is None:
+    _t = st.get_task(task_id)
+    if _t.is_err():
         _msg = f"Task not found: {task_id}"
         raise OpsError(_msg)
-    return [tasks[pid] for pid in t.depends_on if pid in tasks]
+    t: Task = _t.unwrap()
+    _d = st.get_tasks(t.depends_on)
+    if _d.is_err():
+        _msg = f"Task not found: {_d.unwrap_err()}"
+        raise OpsError(_msg)
+    return _d.unwrap()  # type: ignore[no-any-return]
 
 
 def get_children(task_id: str) -> list[Task]:
     """指定タスクを親とする子タスク一覧を返すユースケース。"""
     st = _get_store()
     st.load()
-    tasks = st.get_all_tasks().unwrap_or(default={})
-    t = tasks.get(task_id)
-    if t is None:
+    _t = st.get_task(task_id)
+    if _t.is_err():
         _msg = f"Task not found: {task_id}"
         raise OpsError(_msg)
-    return [tasks[cid] for cid in t.children if cid in tasks]
+    t: Task = _t.unwrap()
+    _c = st.get_tasks(t.children)
+    if _c.is_err():
+        _msg = f"Task not found: {_c.unwrap_err()}"
+        raise OpsError(_msg)
+    return _c.unwrap()  # type: ignore[no-any-return]
 
 
 # ---- DAG 途中挿入 (将来の REST / TUI 用) ----------------------------------

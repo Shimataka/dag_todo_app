@@ -135,6 +135,7 @@ def cmd_update(args: argparse.Namespace) -> int:
                 args.due is not None,
                 args.start is not None,
                 args.priority is not None,
+                args.tags is not None,
             ],
         ):
             _ = update_task(
@@ -144,6 +145,7 @@ def cmd_update(args: argparse.Namespace) -> int:
                 priority=args.priority,
                 start=_parse_date(args.start),
                 due=_parse_datetime(args.due),
+                tags=args.tags,
             )
 
         # status の更新

@@ -407,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # list
     sp = sub.add_parser("list", help="list tasks")
-    sp.add_argument("--status")
+    sp.add_argument("--status", choices=["pending", "in_progress", "done", "requested", "removed"])
     sp.add_argument("--archived", type=lambda x: x.lower() in ("1", "true", "yes"), default=None)
     sp.add_argument("--query")
     sp.add_argument("--details", action="store_true", help="show detailed information")
@@ -429,10 +429,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start")
     sp.add_argument("--priority", type=int)
     sp.add_argument("--tags", nargs="*")
-    sp.add_argument("--status")
+    sp.add_argument("--status", choices=["pending", "in_progress", "done", "requested", "removed"])
     sp.add_argument("--assign-to")
     sp.add_argument("--requested-by")
-    sp.add_argument("--requested-at")
     sp.add_argument("--requested-note")
     sp.add_argument("--add-parent", nargs="*")
     sp.add_argument("--add-child", nargs="*")

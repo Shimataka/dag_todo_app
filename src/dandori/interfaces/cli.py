@@ -2,288 +2,296 @@
 
 import argparse
 import sys
+from datetime import date, datetime
 
 from dandori.core.models import Task
-from dandori.core.sort import task_sort_key, topo_sort
+from dandori.core.ops import (
+    OpsError,
+    add_task,
+    archive_tree,
+    get_task,
+    insert_between,
+    link_parents,
+    list_tasks,
+    remove_parent,
+    set_requested,
+    set_status,
+    unarchive_tree,
+    update_task,
+)
 from dandori.core.validate import detect_cycles, detect_inconsistencies
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
 from dandori.util.dirs import load_env
-from dandori.util.ids import gen_task_id
-from dandori.util.time import format_requested_sla, now_iso
+from dandori.util.time import format_requested_sla
 
 
 def get_store() -> Store:
     return StoreToYAML()
 
 
+def _parse_date(s: str | None) -> date | None:
+    """文字列を date に変換する。"""
+    if s is None:
+        return None
+    return datetime.fromisoformat(s).date()
+
+
+def _parse_datetime(s: str | None) -> datetime | None:
+    """文字列を datetime に変換する。"""
+    if s is None:
+        return None
+    return datetime.fromisoformat(s)
+
+
 def cmd_add(args: argparse.Namespace) -> int:
-    env = load_env()
-    st = get_store()
-    st.load()
-    st.commit()
+    try:
+        # 親として追加
+        parent_ids = args.depends_on or []
+        t = add_task(
+            parent_ids=parent_ids,
+            title=args.title,
+            description=args.description or "",
+            priority=args.priority,
+            start=_parse_date(args.start),
+            due=_parse_datetime(args.due),
+            overwrite_id_by=args.id,
+        )
 
-    tid = gen_task_id(env["USERNAME"]) if args.id is None else args.id
-    t = Task(
-        id=tid,
-        title=args.title,
-        description=args.description or "",
-        due_date=args.due,
-        start_date=args.start,
-        priority=args.priority,
-    )
-    _res = st.add_task(t)
-    if _res.is_err():
-        st.rollback()
-        print(f"Error: {_res.unwrap_err()}")
+        # 子として追加
+        if args.children:
+            for cid in args.children:
+                link_parents(cid, [t.id])
+
+        print(t.id)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-
-    # 親子リンク
-    for pid in args.depends_on or []:
-        _link_res = st.link_tasks(pid, t.id)
-        if _link_res.is_err():
-            st.rollback()
-            print(f"Error: {_link_res.unwrap_err()}")
-            return 1
-    for cid in args.children or []:
-        _link_res = st.link_tasks(t.id, cid)
-        if _link_res.is_err():
-            st.rollback()
-            print(f"Error: {_link_res.unwrap_err()}")
-            return 1
-
-    st.commit()
-    st.save()
-    print(t.id)
-    return 0
+    else:
+        return 0
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    _tasks = st.get_all_tasks()
-    if _tasks.is_err():
-        print(f"Error: {_tasks.unwrap_err()}")
+    try:
+        tasks = list_tasks(
+            status=args.status,  # type: ignore[arg-type]
+            archived=args.archived,
+            topo=args.topo,
+        )
+
+        # query フィルタ(ops.list_tasks にはないので後でフィルタ)
+        if args.query:
+            q = args.query.lower()
+            tasks = [t for t in tasks if q in t.title.lower() or q in (t.description or "").lower()]
+
+        for t in tasks:
+            if args.details:
+                print_task(t)
+                print("-" * 76)
+                continue
+            marks = []
+            if t.is_archived:
+                marks.append("A")
+            if t.status == "requested":
+                marks.append("R")
+            if t.status == "in_progress":
+                marks.append("I")
+            if t.status == "done":
+                marks.append("D")
+            if t.status == "pending":
+                marks.append("P")
+            tag = "[" + ",".join(marks) + "]" if marks else " "
+            assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
+            sla = format_requested_sla(t)
+            extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
+            print(f"{tag} {t.id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
+
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    tasks = list[Task](_tasks.unwrap().values())
-
-    # フィルタ
-    if args.status:
-        tasks = [t for t in tasks if t.status == args.status]
-    if args.archived is not None:
-        tasks = [t for t in tasks if t.is_archived == args.archived]
-    if args.query:
-        q = args.query.lower()
-        tasks = [t for t in tasks if q in t.title.lower() or q in (t.description or "").lower()]
-
-    # ソート
-    if args.topo:
-        tasks = topo_sort({t.id: t for t in tasks})
     else:
-        tasks.sort(key=task_sort_key)
-
-    for t in tasks:
-        if args.details:
-            print_task(t)
-            print("-" * 76)
-            continue
-        marks = []
-        if t.is_archived:
-            marks.append("A")
-        if t.status == "requested":
-            marks.append("R")
-        if t.status == "in_progress":
-            marks.append("I")
-        if t.status == "done":
-            marks.append("D")
-        if t.status == "pending":
-            marks.append("P")
-        tag = "[" + ",".join(marks) + "]" if marks else " "
-        assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
-        sla = format_requested_sla(t)
-        extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
-        print(f"{tag} {t.id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
-
-    return 0
+        return 0
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    t = st.get_task(args.id)
-    if t.is_err():
-        print(f"Error: {t.unwrap_err()}")
+    try:
+        t = get_task(args.id)
+        print_task(t)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    print_task(t.unwrap())
-    return 0
+    else:
+        return 0
 
 
 def cmd_update(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    st.commit()
-    _t = st.get_task(args.id)
-    if _t.is_err():
-        st.rollback()
-        print(f"Error: {_t.unwrap_err()}")
+    try:
+        # 基本フィールドの更新
+        if any(
+            [
+                args.title is not None,
+                args.description is not None,
+                args.due is not None,
+                args.start is not None,
+                args.priority is not None,
+            ],
+        ):
+            _ = update_task(
+                args.id,
+                title=args.title,
+                description=args.description,
+                priority=args.priority,
+                start=_parse_date(args.start),
+                due=_parse_datetime(args.due),
+            )
+
+        # status の更新
+        if args.status is not None:
+            set_status(args.id, args.status)  # type: ignore[arg-type]
+
+        # request 関連フィールドの更新(ops.py に直接対応する関数がないため、Store を直接操作)
+        if any(
+            [
+                args.assign_to is not None,
+                args.requested_by is not None,
+                args.requested_at is not None,
+                args.requested_note is not None,
+            ],
+        ):
+            _ = set_requested(
+                args.id,
+                requested_to=args.assign_to,
+                due=None,
+                note=args.requested_note,
+                requested_by=args.requested_by,
+            )
+
+        # 親子リンクの追加
+        if args.add_parent:
+            link_parents(args.id, args.add_parent)
+        if args.add_child:
+            for cid in args.add_child:
+                link_parents(cid, [args.id])
+
+        # 親子リンクの削除
+        if args.remove_parent:
+            for pid in args.remove_parent:
+                remove_parent(args.id, pid)
+        if args.remove_child:
+            for cid in args.remove_child:
+                remove_parent(cid, args.id)
+
+        print(f"updated: {args.id}")
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    t = _t.unwrap()
+    else:
+        return 0
 
-    if args.title is not None:
-        t.title = args.title
-    if args.description is not None:
-        t.description = args.description
-    if args.due is not None:
-        t.due_date = args.due
-    if args.start is not None:
-        t.start_date = args.start
-    if args.priority is not None:
-        t.priority = args.priority
-    if args.status is not None:
-        t.status = args.status
-    if args.assign_to is not None:
-        t.assigned_to = args.assign_to
-    if args.requested_by is not None:
-        t.requested_by = args.requested_by
-    if args.requested_at is not None:
-        t.requested_at = args.requested_at
-    if args.requested_note is not None:
-        t.requested_note = args.requested_note
 
-    for pid in args.add_parent or []:
-        _link_res = st.link_tasks(pid, t.id)
-        if _link_res.is_err():
-            st.rollback()
-            print(f"Error: {_link_res.unwrap_err()}")
-            return 1
-    for cid in args.add_child or []:
-        _link_res = st.link_tasks(t.id, cid)
-        if _link_res.is_err():
-            st.rollback()
-            print(f"Error: {_link_res.unwrap_err()}")
-            return 1
-    for pid in args.remove_parent or []:
-        _unlink_res = st.unlink_tasks(pid, t.id)
-        if _unlink_res.is_err():
-            st.rollback()
-            print(f"Error: {_unlink_res.unwrap_err()}")
-            return 1
-    for cid in args.remove_child or []:
-        _unlink_res = st.unlink_tasks(t.id, cid)
-        if _unlink_res.is_err():
-            st.rollback()
-            print(f"Error: {_unlink_res.unwrap_err()}")
-            return 1
-
-    t.updated_at = now_iso()
-    st.commit()
-    st.save()
-    print(f"updated: {t.id}")
-    return 0
+def cmd_inprogress(args: argparse.Namespace) -> int:
+    try:
+        set_status(args.id, "in_progress")
+        print(f"in_progress: {args.id}")
+    except OpsError as e:
+        print(f"Error: {e}")
+        return 1
+    else:
+        return 0
 
 
 def cmd_done(args: argparse.Namespace) -> int:
-    # done は update --status done のラッパー
-    update_args = argparse.Namespace(
-        id=args.id,
-        title=None,
-        description=None,
-        due=None,
-        start=None,
-        priority=None,
-        status="done",
-        assign_to=None,
-        requested_by=None,
-        requested_at=None,
-        requested_note=None,
-        add_parent=None,
-        add_child=None,
-        remove_parent=None,
-        remove_child=None,
-    )
-    result = cmd_update(update_args)
-    if result == 0:
+    try:
+        set_status(args.id, "done")
         print(f"done: {args.id}")
-    return result
+    except OpsError as e:
+        print(f"Error: {e}")
+        return 1
+    else:
+        return 0
 
 
 def cmd_insert(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    st.commit()
-    env = load_env()
+    try:
+        # ops.insert_between は ID を自動生成するため、カスタムID指定時は従来の実装を使用
+        if args.id is not None:
+            st = get_store()
+            st.load()
+            st.commit()
 
-    new_id = gen_task_id(env["USERNAME"]) if args.id is None else args.id
-    new_task = Task(id=new_id, title=args.title, description=args.description or "")
-    _res = st.insert_task(args.a, args.b, new_task)
-    if _res.is_err():
-        st.rollback()
-        print(f"Error: {_res.unwrap_err()}")
+            new_id = args.id
+            new_task = Task(id=new_id, title=args.title, description=args.description or "")
+            _res = st.insert_task(args.a, args.b, new_task)
+            if _res.is_err():
+                st.rollback()
+                print(f"Error: {_res.unwrap_err()}")
+                return 1
+            st.commit()
+            st.save()
+            print(new_task.id)
+            return 0
+
+        new_task = insert_between(
+            args.a,
+            args.b,
+            title=args.title,
+            description=args.description or "",
+        )
+        print(new_task.id)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    st.commit()
-    st.save()
-    print(new_task.id)
-    return 0
+    else:
+        return 0
 
 
 def cmd_archive(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    st.commit()
-    _ids = st.archive_tasks(args.id, flag=True)
-    if _ids.is_err():
-        st.rollback()
-        print(f"Error: {_ids.unwrap_err()}")
+    try:
+        ids = archive_tree(args.id)
+        print("archived:")
+        for i in ids:
+            print(" ", i)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    ids = _ids.unwrap()
-    st.commit()
-    st.save()
-    print("archived:")
-    for i in ids:
-        print(" ", i)
-    return 0
+    else:
+        return 0
 
 
 def cmd_restore(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    st.commit()
-    _ids = st.archive_tasks(args.id, flag=False)
-    if _ids.is_err():
-        st.rollback()
-        print(f"Error: {_ids.unwrap_err()}")
+    try:
+        ids = unarchive_tree(args.id)
+        print("restored:")
+        for i in ids:
+            print(" ", i)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    ids = _ids.unwrap()
-    st.commit()
-    st.save()
-    print("restored:")
-    for i in ids:
-        print(" ", i)
-    return 0
+    else:
+        return 0
 
 
 def cmd_deps(args: argparse.Namespace) -> int:
-    st = get_store()
-    st.load()
-    _t = st.get_task(args.id)
-    if _t.is_err():
-        print(f"Error: {_t.unwrap_err()}")
+    try:
+        t = get_task(args.id)
+        print("depends_on:")
+        for pid in t.depends_on:
+            print(" ", pid)
+        print("children:")
+        for cid in t.children:
+            print(" ", cid)
+    except OpsError as e:
+        print(f"Error: {e}")
         return 1
-    t = _t.unwrap()
-    print("depends_on:")
-    for pid in t.depends_on:
-        print(" ", pid)
-    print("children:")
-    for cid in t.children:
-        print(" ", cid)
-    return 0
+    else:
+        return 0
 
 
 def cmd_reason(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _info = st.get_reason(args.id)
+    _info = st.get_dependency_info(args.id)
     if _info.is_err():
         print(f"Error: {_info.unwrap_err()}")
         return 1
@@ -296,30 +304,21 @@ def cmd_reason(args: argparse.Namespace) -> int:
 
 
 def cmd_request(args: argparse.Namespace) -> int:
-    # request は update --status requested --assign-to ... のラッパー
-    env = load_env()
-    requested_note = f"[request-note] {args.note}" if args.note else None
-    update_args = argparse.Namespace(
-        id=args.id,
-        title=None,
-        description=None,
-        due=None,
-        start=None,
-        priority=None,
-        status="requested",
-        assign_to=args.assignee,
-        requested_by=args.requester or env.get("USERNAME", "anonymous"),
-        requested_at=now_iso(),
-        requested_note=requested_note,
-        add_parent=None,
-        add_child=None,
-        remove_parent=None,
-        remove_child=None,
-    )
-    result = cmd_update(update_args)
-    if result == 0:
+    try:
+        env = load_env()
+        set_requested(
+            args.id,
+            requested_to=args.assignee,
+            due=None,  # CLI では due を受け取っていない
+            note=args.note or "",
+            requested_by=args.requester or env.get("USERNAME", "anonymous"),
+        )
         print(f"requested: {args.id} -> {args.assignee}")
-    return result
+    except OpsError as e:
+        print(f"Error: {e}")
+        return 1
+    else:
+        return 0
 
 
 def cmd_export(args: argparse.Namespace) -> int:

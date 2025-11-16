@@ -1,4 +1,4 @@
-from dandori.cli.parser import main
+from dandori.interfaces.cli import main
 
 if __name__ == "__main__":
     main()

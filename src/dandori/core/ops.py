@@ -259,29 +259,15 @@ def archive_tree(task_id: str) -> list[str]:
 
     戻り値は、アーカイブ状態が変更されたタスクIDのリスト。
     """
-    st = _get_store()
-    st.load()
-    st.commit()
-
-    match st.weakly_connected_component(task_id):
-        case Ok(comp):
-            for t in comp:
-                t.is_archived = True
-                t.updated_at = now_iso()
-            st.commit()
-            st.save()
-            return [t.id for t in comp]
-        case Err(e):
-            st.rollback()
-            raise OpsError(e)
-        case _:
-            st.rollback()
-            _msg = "Unexpected error"
-            raise OpsError(_msg)
+    return _toggle_archive_tree(task_id, archive_flag=True)
 
 
 def unarchive_tree(task_id: str) -> list[str]:
     """弱連結成分単位でアーカイブ解除するユースケース。"""
+    return _toggle_archive_tree(task_id, archive_flag=False)
+
+
+def _toggle_archive_tree(task_id: str, *, archive_flag: bool) -> list[str]:
     st = _get_store()
     st.load()
     st.commit()
@@ -289,7 +275,7 @@ def unarchive_tree(task_id: str) -> list[str]:
     match st.weakly_connected_component(task_id):
         case Ok(comp):
             for t in comp:
-                t.is_archived = False
+                t.is_archived = archive_flag
                 t.updated_at = now_iso()
             st.commit()
             st.save()

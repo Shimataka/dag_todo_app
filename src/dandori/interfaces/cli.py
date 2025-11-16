@@ -4,7 +4,6 @@ import argparse
 import sys
 from datetime import date, datetime
 
-from dandori.core.models import Task
 from dandori.core.ops import (
     OpsError,
     add_task,
@@ -152,7 +151,7 @@ def cmd_update(args: argparse.Namespace) -> int:
         if args.status is not None:
             set_status(args.id, args.status)  # type: ignore[arg-type]
 
-        # request 関連フィールドの更新(ops.py に直接対応する関数がないため、Store を直接操作)
+        # request 関連フィールドの更新
         if any(
             [
                 args.assign_to is not None,
@@ -216,29 +215,13 @@ def cmd_done(args: argparse.Namespace) -> int:
 
 def cmd_insert(args: argparse.Namespace) -> int:
     try:
-        # ops.insert_between は ID を自動生成するため、カスタムID指定時は従来の実装を使用
-        if args.id is not None:
-            st = get_store()
-            st.load()
-            st.commit()
-
-            new_id = args.id
-            new_task = Task(id=new_id, title=args.title, description=args.description or "")
-            _res = st.insert_task(args.a, args.b, new_task)
-            if _res.is_err():
-                st.rollback()
-                print(f"Error: {_res.unwrap_err()}")
-                return 1
-            st.commit()
-            st.save()
-            print(new_task.id)
-            return 0
-
         new_task = insert_between(
             args.a,
             args.b,
             title=args.title,
             description=args.description or "",
+            priority=args.priority,
+            overwrite_id_by=args.id,
         )
         print(new_task.id)
     except OpsError as e:

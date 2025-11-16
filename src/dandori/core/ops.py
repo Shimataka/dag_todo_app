@@ -15,7 +15,8 @@ if TYPE_CHECKING:
     from datetime import date, datetime
 
 
-Status = Literal["pending", "in_progress", "done", "requested"]
+Status = Literal["pending", "in_progress", "done", "requested", "removed"]
+PREFIX_REQUEST_NOTE = "[request-note]"
 
 
 class OpsError(Exception):
@@ -242,7 +243,7 @@ def set_requested(
     if requested_to is not None:
         t.assigned_to = requested_to
     if note is not None:
-        t.requested_note = f"[request-note] {note}"
+        t.requested_note = f"{PREFIX_REQUEST_NOTE} {note}"
     if due is not None:
         t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
     if requested_by is not None:

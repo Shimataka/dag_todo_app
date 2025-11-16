@@ -14,7 +14,7 @@ class Task:
     due_date: str | None = None
     start_date: str | None = None
     priority: int = 0
-    status: Literal["pending", "in_progress", "done", "requested"] = "pending"
+    status: Literal["pending", "in_progress", "done", "requested", "removed"] = "pending"
     depends_on: list[str] = field(default_factory=list)  # 複数親OK
     children: list[str] = field(default_factory=list)  # 複数子OK
     is_archived: bool = False

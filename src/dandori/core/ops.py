@@ -222,7 +222,8 @@ def set_requested(
     現状の CLI の cmd_request と同等の振る舞いを想定する：
       - status を "requested" に変更
       - assigned_to を requested_to に設定
-      - requested_by / requested_at / requested_note を更新
+      - requested_at の設定がなければ現在時刻に設定
+      - requested_by / requested_note を更新
       - due が渡されれば due_date を上書き（SLA 扱い）
     """
     env = load_env()
@@ -249,8 +250,7 @@ def set_requested(
 
     t.status = "requested"
     t.requested_at = now_iso() if t.requested_at is None else t.requested_at
-    if requested_by is not None:
-        t.requested_by = requested_by
+    t.requested_by = requested_by
     t.updated_at = now_iso()
 
     st.commit()
@@ -338,6 +338,7 @@ def insert_between(
     title: str,
     description: str = "",
     priority: int | None = None,
+    tags: list[str] | None = None,
     overwrite_id_by: str | None = None,
 ) -> Task:
     """Parent -> child 間に新しいタスクを挿入するユースケース。
@@ -354,12 +355,13 @@ def insert_between(
     st.commit()
 
     # 新タスク作成
-    tid = gen_task_id(username)
+    tid = overwrite_id_by or gen_task_id(username)
     new_task = Task(
         id=tid,
         title=title,
         description=description or "",
         priority=priority or 0,
+        tags=tags or [],
     )
     _res = st.insert_task(
         parent_id,

@@ -55,6 +55,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             priority=args.priority,
             start=_parse_date(args.start),
             due=_parse_datetime(args.due),
+            tags=args.tags,
             overwrite_id_by=args.id,
         )
 
@@ -154,18 +155,18 @@ def cmd_update(args: argparse.Namespace) -> int:
         # request 関連フィールドの更新
         if any(
             [
+                args.due is not None,
                 args.assign_to is not None,
                 args.requested_by is not None,
-                args.requested_at is not None,
                 args.requested_note is not None,
             ],
         ):
             _ = set_requested(
                 args.id,
+                due=_parse_datetime(args.due),
                 requested_to=args.assign_to,
-                due=None,
-                note=args.requested_note,
                 requested_by=args.requested_by,
+                note=args.requested_note,
             )
 
         # 親子リンクの追加
@@ -221,6 +222,7 @@ def cmd_insert(args: argparse.Namespace) -> int:
             title=args.title,
             description=args.description or "",
             priority=args.priority,
+            tags=args.tags,
             overwrite_id_by=args.id,
         )
         print(new_task.id)
@@ -400,6 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--id")
     sp.add_argument("--depends-on", nargs="*")
     sp.add_argument("--children", nargs="*")
+    sp.add_argument("--tags", nargs="*")
     sp.set_defaults(func=cmd_add)
 
     # list
@@ -425,6 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--due")
     sp.add_argument("--start")
     sp.add_argument("--priority", type=int)
+    sp.add_argument("--tags", nargs="*")
     sp.add_argument("--status")
     sp.add_argument("--assign-to")
     sp.add_argument("--requested-by")
@@ -435,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--remove-parent", nargs="*")
     sp.add_argument("--remove-child", nargs="*")
     sp.set_defaults(func=cmd_update)
+
+    # inprogress
+    sp = sub.add_parser("inprogress", help="mark in progress")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_inprogress)
 
     # done
     sp = sub.add_parser("done", help="mark done")
@@ -447,6 +456,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("b")
     sp.add_argument("--title", required=True)
     sp.add_argument("--description")
+    sp.add_argument("--priority", type=int, default=0)
+    sp.add_argument("--tags", nargs="*")
     sp.add_argument("--id")
     sp.set_defaults(func=cmd_insert)
 

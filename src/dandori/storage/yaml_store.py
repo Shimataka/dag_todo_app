@@ -76,6 +76,18 @@ class StoreToYAML(Store):
             return Err[Task, str](_msg)
         return Ok[Task, str](t)
 
+    def get_tasks(self, task_ids: list[str]) -> Result[list[Task], str]:
+        """タスクIDのリストでタスクを取得する。
+
+        Args:
+            task_ids: 取得するタスクのIDのリスト
+
+        Returns:
+            Ok(list[Task]): 成功時（タスクのリスト）
+            Err(str): 失敗時
+        """
+        return Ok[list[Task], str]([self.tasks[tid] for tid in task_ids if tid in self.tasks])
+
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
         """全タスクを取得する。
 

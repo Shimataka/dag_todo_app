@@ -82,6 +82,19 @@ class Store(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_tasks(self, task_ids: list[str]) -> Result[list[Task], str]:
+        """タスクIDのリストでタスクを取得する。
+
+        Args:
+            task_ids: 取得するタスクのIDのリスト
+
+        Returns:
+            Ok(list[Task]): 成功時（タスクのリスト）
+            Err(str): 失敗時
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
         """全タスクを取得する。
 

@@ -15,3 +15,5 @@ def print_task(t: Task) -> None:
         print(f"assigned_to: {t.assigned_to}")
     if t.requested_by:
         print(f"requested_by: {t.requested_by}")
+    if t.tags:
+        print(f"tags: {t.tags}")

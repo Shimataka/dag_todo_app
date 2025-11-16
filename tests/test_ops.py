@@ -264,12 +264,9 @@ class TestOps(unittest.TestCase):
 
     def test_archive_tree_not_found(self) -> None:
         """存在しないタスクをアーカイブしようとすると OpsError が発生することを確認"""
-        error_raised = False
-        try:
+        with pytest.raises(ops.OpsError) as exec_info:
             ops.archive_tree("nonexistent")
-        except ops.OpsError:
-            error_raised = True
-        assert error_raised
+        assert "Task not found" in str(exec_info.value)
 
     def test_unarchive_tree(self) -> None:
         """弱連結成分単位でタスクをアーカイブ解除できることを確認"""
@@ -288,12 +285,9 @@ class TestOps(unittest.TestCase):
 
     def test_unarchive_tree_not_found(self) -> None:
         """存在しないタスクをアーカイブ解除しようとすると OpsError が発生することを確認"""
-        error_raised = False
-        try:
+        with pytest.raises(ops.OpsError) as exec_info:
             ops.unarchive_tree("nonexistent")
-        except ops.OpsError:
-            error_raised = True
-        assert error_raised
+        assert "Task not found" in str(exec_info.value)
 
     # ---- 依存関係取得 ----
 

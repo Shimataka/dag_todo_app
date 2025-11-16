@@ -155,11 +155,21 @@ class Store(ABC):
     # ---- アーカイブ (弱連結成分単位) ----
 
     @abstractmethod
-    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
-        """弱連結成分単位でアーカイブ状態を切り替える。
+    def weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+        """指定されたタスクを含む弱連結成分を取得する。
 
-        指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
-        全タスクのis_archivedフラグを一括更新します。
+        Args:
+            start: 起点となるタスクのID
+
+        Returns:
+            Ok(list[Task]): 成功時（弱連結成分のタスクリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def archive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を切り替える。
 
         Args:
             task_id: 起点となるタスクのID
@@ -171,10 +181,23 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def unarchive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を復元する。
+
+        Args:
+            task_id: 起点となるタスクのID
+
+        Returns:
+            Ok(list[str]): 成功時（更新されたタスクIDのリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        raise NotImplementedError
+
     # ---- 依存理由表示 (why→reason) ----
 
     @abstractmethod
-    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+    def get_dependency_info(self, task_id: str) -> Result[dict[str, list[str]], str]:
         """タスクの依存関係情報を取得する。
 
         Args:

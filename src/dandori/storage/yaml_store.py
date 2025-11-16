@@ -201,24 +201,23 @@ class StoreToYAML(Store):
 
     # ---- アーカイブ (弱連結成分単位) ----
 
-    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
-        """弱連結成分単位でアーカイブ状態を切り替える。
+    def archive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態にする。
 
         指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
-        全タスクのis_archivedフラグを一括更新します。
+        全タスクのis_archivedフラグを一括アーカイブします。
 
         Args:
             task_id: 起点となるタスクのID
-            flag: Trueでアーカイブ、Falseで復元
 
         Returns:
             Ok(list[str]): 成功時（更新されたタスクIDのリスト）
             Err(str): 失敗時（例: タスクが見つからない）
         """
-        match self._weakly_connected_component(task_id):
+        match self.weakly_connected_component(task_id):
             case Ok(comp):
                 for t in comp:
-                    t.is_archived = flag
+                    t.is_archived = True
                     t.updated_at = now_iso()
                 return Ok[list[str], str]([t.id for t in comp])
             case Err(e):
@@ -226,7 +225,31 @@ class StoreToYAML(Store):
             case _:
                 return Err[list[str], str]("Unexpected error")
 
-    def _weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+    def unarchive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を復元する。
+
+        指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
+        全タスクのis_archivedフラグを一括復元します。
+
+        Args:
+            task_id: 起点となるタスクのID
+
+        Returns:
+            Ok(list[str]): 成功時（更新されたタスクIDのリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match self.weakly_connected_component(task_id):
+            case Ok(comp):
+                for t in comp:
+                    t.is_archived = False
+                    t.updated_at = now_iso()
+                return Ok[list[str], str]([t.id for t in comp])
+            case Err(e):
+                return Err[list[str], str](e)
+            case _:
+                return Err[list[str], str]("Unexpected error")
+
+    def weakly_connected_component(self, start: str) -> Result[list[Task], str]:
         visited_tasks: list[Task] = []
 
         seen: set[str] = set[str]()
@@ -247,9 +270,9 @@ class StoreToYAML(Store):
                     return Err[list[Task], str]("Unexpected error")
         return Ok[list[Task], str](visited_tasks)
 
-    # ---- 依存理由表示 (why→reason) ----
+    # ---- 依存関係情報表示 ----
 
-    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+    def get_dependency_info(self, task_id: str) -> Result[dict[str, list[str]], str]:
         """タスクの依存関係情報を取得する。
 
         Args:

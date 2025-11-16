@@ -76,6 +76,18 @@ class StoreToYAML(Store):
             return Err[Task, str](_msg)
         return Ok[Task, str](t)
 
+    def get_tasks(self, task_ids: list[str]) -> Result[list[Task], str]:
+        """タスクIDのリストでタスクを取得する。
+
+        Args:
+            task_ids: 取得するタスクのIDのリスト
+
+        Returns:
+            Ok(list[Task]): 成功時（タスクのリスト）
+            Err(str): 失敗時
+        """
+        return Ok[list[Task], str]([self.tasks[tid] for tid in task_ids if tid in self.tasks])
+
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
         """全タスクを取得する。
 
@@ -201,24 +213,23 @@ class StoreToYAML(Store):
 
     # ---- アーカイブ (弱連結成分単位) ----
 
-    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
-        """弱連結成分単位でアーカイブ状態を切り替える。
+    def archive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態にする。
 
         指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
-        全タスクのis_archivedフラグを一括更新します。
+        全タスクのis_archivedフラグを一括アーカイブします。
 
         Args:
             task_id: 起点となるタスクのID
-            flag: Trueでアーカイブ、Falseで復元
 
         Returns:
             Ok(list[str]): 成功時（更新されたタスクIDのリスト）
             Err(str): 失敗時（例: タスクが見つからない）
         """
-        match self._weakly_connected_component(task_id):
+        match self.weakly_connected_component(task_id):
             case Ok(comp):
                 for t in comp:
-                    t.is_archived = flag
+                    t.is_archived = True
                     t.updated_at = now_iso()
                 return Ok[list[str], str]([t.id for t in comp])
             case Err(e):
@@ -226,7 +237,31 @@ class StoreToYAML(Store):
             case _:
                 return Err[list[str], str]("Unexpected error")
 
-    def _weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+    def unarchive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を復元する。
+
+        指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
+        全タスクのis_archivedフラグを一括復元します。
+
+        Args:
+            task_id: 起点となるタスクのID
+
+        Returns:
+            Ok(list[str]): 成功時（更新されたタスクIDのリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        match self.weakly_connected_component(task_id):
+            case Ok(comp):
+                for t in comp:
+                    t.is_archived = False
+                    t.updated_at = now_iso()
+                return Ok[list[str], str]([t.id for t in comp])
+            case Err(e):
+                return Err[list[str], str](e)
+            case _:
+                return Err[list[str], str]("Unexpected error")
+
+    def weakly_connected_component(self, start: str) -> Result[list[Task], str]:
         visited_tasks: list[Task] = []
 
         seen: set[str] = set[str]()
@@ -247,9 +282,9 @@ class StoreToYAML(Store):
                     return Err[list[Task], str]("Unexpected error")
         return Ok[list[Task], str](visited_tasks)
 
-    # ---- 依存理由表示 (why→reason) ----
+    # ---- 依存関係情報表示 ----
 
-    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+    def get_dependency_info(self, task_id: str) -> Result[dict[str, list[str]], str]:
         """タスクの依存関係情報を取得する。
 
         Args:
@@ -273,7 +308,14 @@ class StoreToYAML(Store):
 
     # ---- 挿入機能 A -> (new) -> B ----
 
-    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(
+        self,
+        a: str,
+        b: str,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         """既存のエッジA->Bの間に新しいタスクを挿入する。
 
         既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。
@@ -283,13 +325,14 @@ class StoreToYAML(Store):
             a: 親タスクのID
             b: 子タスクのID
             new_task: 挿入する新しいタスク
+            id_overwritten: 新しいタスクのIDを上書きする場合に指定
 
         Returns:
             Ok(None): 成功時
             Err(str): 失敗時（例: 循環検出、タスクが見つからない）
         """
         match (
-            self._add_inserted_task(new_task)
+            self._add_inserted_task(new_task, id_overwritten=id_overwritten)
             .and_then(lambda _: self._remove_existing_edge(a, b))
             .and_then(lambda _: self._link_inserted_task(a, b, new_task))
         ):
@@ -300,9 +343,14 @@ class StoreToYAML(Store):
             case _:
                 return Err[None, str]("Unexpected error")
 
-    def _add_inserted_task(self, new_task: Task) -> Result[None, str]:
+    def _add_inserted_task(
+        self,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         # A->B の直接辺が無くても許容: 存在する親子関係を保ちつつ "間に入る"
-        return self.add_task(new_task)
+        return self.add_task(new_task, id_overwritten=id_overwritten)
 
     def _remove_existing_edge(self, a: str, b: str) -> Result[None, str]:
         # もしA->Bが直結していれば切ってA->new, new->B

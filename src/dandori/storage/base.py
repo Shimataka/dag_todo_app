@@ -82,6 +82,19 @@ class Store(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_tasks(self, task_ids: list[str]) -> Result[list[Task], str]:
+        """タスクIDのリストでタスクを取得する。
+
+        Args:
+            task_ids: 取得するタスクのIDのリスト
+
+        Returns:
+            Ok(list[Task]): 成功時（タスクのリスト）
+            Err(str): 失敗時
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
         """全タスクを取得する。
 
@@ -155,11 +168,21 @@ class Store(ABC):
     # ---- アーカイブ (弱連結成分単位) ----
 
     @abstractmethod
-    def archive_tasks(self, task_id: str, *, flag: bool) -> Result[list[str], str]:
-        """弱連結成分単位でアーカイブ状態を切り替える。
+    def weakly_connected_component(self, start: str) -> Result[list[Task], str]:
+        """指定されたタスクを含む弱連結成分を取得する。
 
-        指定されたタスクを含む弱連結成分（無向グラフとしての連結成分）の
-        全タスクのis_archivedフラグを一括更新します。
+        Args:
+            start: 起点となるタスクのID
+
+        Returns:
+            Ok(list[Task]): 成功時（弱連結成分のタスクリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def archive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を切り替える。
 
         Args:
             task_id: 起点となるタスクのID
@@ -171,10 +194,23 @@ class Store(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def unarchive_tasks(self, task_id: str) -> Result[list[str], str]:
+        """弱連結成分単位でアーカイブ状態を復元する。
+
+        Args:
+            task_id: 起点となるタスクのID
+
+        Returns:
+            Ok(list[str]): 成功時（更新されたタスクIDのリスト）
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        raise NotImplementedError
+
     # ---- 依存理由表示 (why→reason) ----
 
     @abstractmethod
-    def get_reason(self, task_id: str) -> Result[dict[str, list[str]], str]:
+    def get_dependency_info(self, task_id: str) -> Result[dict[str, list[str]], str]:
         """タスクの依存関係情報を取得する。
 
         Args:
@@ -189,7 +225,14 @@ class Store(ABC):
     # ---- 挿入機能 A -> (new) -> B ----
 
     @abstractmethod
-    def insert_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
+    def insert_task(
+        self,
+        a: str,
+        b: str,
+        new_task: Task,
+        *,
+        id_overwritten: str | None = None,
+    ) -> Result[None, str]:
         """既存のエッジA->Bの間に新しいタスクを挿入する。
 
         既存のエッジA->Bが存在する場合は削除し、A->new_task->Bの構造に変更します。
@@ -199,6 +242,7 @@ class Store(ABC):
             a: 親タスクのID
             b: 子タスクのID
             new_task: 挿入する新しいタスク
+            id_overwritten: 新しいタスクのIDを上書きする場合に指定
 
         Returns:
             Ok(None): 成功時

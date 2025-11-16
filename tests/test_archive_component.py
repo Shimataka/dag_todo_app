@@ -39,7 +39,7 @@ class TestArchiveComponent(unittest.TestCase):
         assert self.store.get_task("task_c").unwrap().is_archived is False
 
         # task_bを含む弱連結成分をアーカイブ
-        archive_result = self.store.archive_tasks("task_b", flag=True)
+        archive_result = self.store.archive_tasks("task_b")
         assert archive_result.is_ok()
         archived_ids = archive_result.unwrap()
         self.store.save()
@@ -66,7 +66,7 @@ class TestArchiveComponent(unittest.TestCase):
         self.store.save()
 
         # task_aを含む弱連結成分をアーカイブ
-        archive_result = self.store.archive_tasks("task_a", flag=True)
+        archive_result = self.store.archive_tasks("task_a")
         assert archive_result.is_ok()
         archived_ids = archive_result.unwrap()
         self.store.save()
@@ -91,7 +91,7 @@ class TestArchiveComponent(unittest.TestCase):
         self.store.save()
 
         # 復元
-        restore_result = self.store.archive_tasks("task_a", flag=False)
+        restore_result = self.store.unarchive_tasks("task_a")
         assert restore_result.is_ok()
         restored_ids = restore_result.unwrap()
         self.store.save()

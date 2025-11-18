@@ -35,6 +35,7 @@ Mode = Literal[
 DialogKind = Literal[
     "add",
     "edit",
+    "request",
 ]
 
 HEADER_TITLE = "dandori TUI  "
@@ -320,14 +321,20 @@ class App:
         lines.append(f"Priority    : {t.priority}")
         lines.append(f"Start       : {t.start_date or ''}")
         lines.append(f"Due         : {t.due_date or ''}")
+        lines.append("Request")
+        lines.append(f"  - to      : {t.assigned_to or ''}")
+        lines.append(f"  - at      : {t.requested_at or ''}")
+        lines.append(f"  - by      : {t.requested_by or ''}")
+        n_ = t.requested_note or "[No note]"
+        lines.append(f"  - note    : {n_}")
         lines.append("Tags        : ")
         lines.extend(["  - " + tag for tag in t.tags])
         lines.append("Depends on  : ")
         lines.extend(["  - " + dep for dep in t.depends_on])
         lines.append("Children    :   ")
         lines.extend(["  - " + child for child in t.children])
-        lines.append("Description : ")
-        lines.extend(["  " + line for line in t.description.splitlines() or []])
+        d_ = t.description or "[No description]"
+        lines.append(f"Description : {d_}")
         return lines
 
     # ---- dialog ---------------------------------------------------------
@@ -341,10 +348,8 @@ class App:
         num_fields = len(dlg.fields)
         if num_fields == 0:
             return
-
         box_width = min(80, max_x - 4)
         box_height = 3 + num_fields + 1  # title + empty + fields + hint
-
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
 
@@ -491,6 +496,38 @@ class App:
         )
         self.state.mode = "dialog"
 
+    def _start_request_dialog(self) -> None:
+        """Open dialog to mark current task as requested (assignee + note)"""
+        task = self._current_task()
+        if task is None:
+            self.state.message = "No task selected"
+            return
+        # 既知情報を初期値として利用
+        initial_assignee = task.assigned_to or ""
+        initial_note = task.requested_note or ""
+        fields = [
+            FieldState(
+                name="assignee",
+                label="Assignee ",
+                buffer=initial_assignee,
+                cursor=len(initial_assignee),
+            ),
+            FieldState(
+                name="note",
+                label="Note     ",
+                buffer=initial_note,
+                cursor=len(initial_note),
+            ),
+        ]
+        self.state.dialog = DialogState(
+            kind="request",
+            title="Request Task",
+            fields=fields,
+            current_index=0,
+            target_task_id=task.id,
+        )
+        self.state.mode = "dialog"
+
     def _apply_dialog(self) -> None:  # noqa: C901
         """Apply the dialog result (add/edit)"""
         dlg = self.state.dialog
@@ -498,10 +535,6 @@ class App:
             return
         # フィールドをdictにまとめる
         values: dict[str, str] = {f.name: f.buffer.strip() for f in dlg.fields}
-        # title (required)
-        if (title := values.get("title")) is None:
-            self.state.message = "Empty title: canceled"
-            return
         # priority (optional)
         if (_priority := values.get("priority")) is not None and _priority != "":
             try:
@@ -531,9 +564,17 @@ class App:
             due_date = None
         # tags (optional)
         tags = _tags.split(",") if (_tags := values.get("tags")) else None
+        # assignee (optional)
+        assignee = values.get("assignee")
+        # note (optional)
+        note = values.get("note")
 
         # add task
         if dlg.kind == "add":
+            # title (required)
+            if (title := values.get("title")) is None:
+                self.state.message = "Empty title: canceled"
+                return
             # 親は「現在選択中のタスク」で、なければルートタスク
             parent_ids: list[str] = []
             current = self._current_task()
@@ -558,6 +599,10 @@ class App:
                 self._reload_tasks(keep_task_id=task.id)
         # edit task
         elif dlg.kind == "edit":
+            # title (required)
+            if (title := values.get("title")) is None:
+                self.state.message = "Empty title: canceled"
+                return
             if dlg.target_task_id is None:
                 self.state.message = "No task selected for edit"
                 return
@@ -577,6 +622,27 @@ class App:
             else:
                 self.state.message = f"Updated: {task.id[:6]}"
                 self._reload_tasks(keep_task_id=task.id)
+        elif dlg.kind == "request":
+            # title (required)
+            if dlg.target_task_id is None:
+                self.state.message = "No task selected for request"
+                return
+            try:
+                # requested_by はset_requested内部でenvから補完してもらう
+                set_requested(
+                    dlg.target_task_id,
+                    requested_to=assignee,
+                    note=note,
+                    due=due_date,
+                    requested_by=None,
+                )
+            except OpsError as e:
+                self.state.message = f"Error (request): {e}"
+                return
+            else:
+                self.state.message = f"Requested: {dlg.target_task_id[:6]}"
+                self._reload_tasks(keep_task_id=dlg.target_task_id)
+
         else:
             _msg = f"Invalid dialog kind: {dlg.kind}"  # type: ignore[unreachable]
             logger.error(_msg)
@@ -665,22 +731,6 @@ class App:
             self.state.message = f"Status -> {status}: {task.id[:6]}"
             self._reload_tasks(keep_task_id=task.id)
 
-    def _set_requested(self) -> None:
-        """Mark current task as requested (simple version, no dialog yet)."""
-        task = self._current_task()
-        if task is None:
-            self.state.message = "No task selected"
-            return
-
-        try:
-            # ひとまず詳細情報は省略し、status/requested_* を最小限で設定
-            set_requested(task.id)
-        except OpsError as e:
-            self.state.message = f"Error: {e}"
-        else:
-            self.state.message = f"Status -> requested: {task.id[:6]}"
-            self._reload_tasks(keep_task_id=task.id)
-
     def _toggle_archive_tree(self, *, archive: bool) -> None:
         """Archive or unarchive weakly connected component."""
         task = self._current_task()
@@ -743,7 +793,7 @@ class App:
             self._set_status("done")
         elif key in (ord("r"), ord("R")):
             # requested (簡易版: 詳細入力は Step3 で対応)
-            self._set_requested()
+            self._start_request_dialog()
         elif key in (ord("x"), ord("X")):
             # archive tree
             self._toggle_archive_tree(archive=True)

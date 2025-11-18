@@ -11,6 +11,8 @@ from dandori.core.ops import (
     OpsError,
     add_task,
     archive_tree,
+    get_children,
+    get_deps,
     list_tasks,
     set_requested,
     set_status,
@@ -31,6 +33,7 @@ locale.setlocale(locale.LC_ALL, "")
 Mode = Literal[
     "list",
     "dialog",
+    "overlay",
 ]
 DialogKind = Literal[
     "add",
@@ -41,7 +44,24 @@ DialogKind = Literal[
 HEADER_TITLE = "dandori TUI  [↑/↓, (q)uit, "
 HEADER_TITLE += "(f)ilter, (a)rchived, (r)equested, (t)opo, "
 HEADER_TITLE += "(p)end, (i)n_progress, (d)one, (x)archive, (u)narchive, "
-HEADER_TITLE += "(A)dd, (E)dit, (R)equest]"
+HEADER_TITLE += "(A)dd, (E)dit, (R)equest, (G)raph]"
+
+STATUS_MARK_MAP = {
+    "pending": "-",
+    "in_progress": "I",
+    "done": "D",
+    "requested": "R",
+    "removed": "X",
+    "archived": "A",
+}
+
+
+@dataclass
+class OverlayState:
+    """Read-only overlay to show local graph (deps/children) etc."""
+
+    title: str
+    lines: list[str]
 
 
 @dataclass
@@ -79,6 +99,7 @@ class AppState:
     mode: Mode = "list"
     filter: FilterState = field(default_factory=FilterState)
     dialog: DialogState | None = None
+    overlay: OverlayState | None = None
 
     # UI用
     message: str | None = None  # フッターメッセージ表示
@@ -204,6 +225,8 @@ class App:
 
         if self.state.mode == "dialog" and self.state.dialog is not None:
             self._draw_dialog(header_height, content_height, max_x)
+        if self.state.mode == "overlay" and self.state.overlay is not None:
+            self._draw_overlay(header_height, content_height, max_x)
 
         self.stdscr.refresh()
 
@@ -280,20 +303,12 @@ class App:
         marks: list[str] = []
         if t.is_archived:
             marks.append("A")
-        # elif t.status == "pending":
-        #     marks.append("P")
-        elif t.status == "requested":
-            marks.append("R")
-        elif t.status == "in_progress":
-            marks.append("I")
-        elif t.status == "done":
-            marks.append("D")
-        status_str = "".join(marks) or "-"
+        status_str = STATUS_MARK_MAP.get(t.status, "?")
 
         short_id = t.id[:6]
         title = t.title.replace("\n", " ")
 
-        line = f"{status_str} {short_id} {title}"
+        line = f"{status_str} {short_id:<6} {title}"
         return line[:width]
 
     def _draw_detail(  # noqa: C901
@@ -410,6 +425,105 @@ class App:
         # ヒント
         hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
         self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
+
+    # ---- overlay --------------------------------------------------------
+
+    def _draw_overlay(self, content_y: int, content_height: int, max_x: int) -> None:
+        """Draw small overlay to show local graph (deps/children) etc."""
+        ov = self.state.overlay
+        if ov is None or not ov.lines:
+            return
+
+        # 行数で高さを決める
+        box_width = min(100, max_x - 4)
+        max_box_height = content_height
+        needed_height = min(len(ov.lines) + 2, max_box_height)
+        box_height = max(3, needed_height)
+
+        top = content_y + max(0, (content_height - box_height) // 2)
+        left = max(2, (max_x - box_width) // 2)
+
+        # クリア
+        for row in range(box_height):
+            self._safe_addnstr(top + row, left, " " * box_width, box_width)
+
+        # タイトル
+        title = f"[{ov.title}]"
+        self._safe_addnstr(top, left, title.ljust(box_width), box_width)
+
+        # 本文
+        start_row = top + 1
+        row = start_row
+        for line in ov.lines[: box_height - 2]:
+            self._safe_addnstr(row, left, line.ljust(box_width), box_width)
+            row += 1
+
+        # ヒント
+        hint = "[ESC key: close]"
+        self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
+
+    # ---- overlay helpers ------------------------------------------------
+
+    def _start_graph_overlay(self) -> None:
+        """Show local graph (deps and children) for current task."""
+        task = self._current_task()
+        if task is None:
+            self.state.message = "No task selected"
+            return
+
+        try:
+            deps = get_deps(task.id)
+            children = get_children(task.id)
+        except OpsError as e:
+            self.state.message = f"Error (graph): {e}"
+            return
+
+        lines: list[str] = []
+        lines.append("-" * 13)  # 13は"(Depended by)"の長さ
+        # ---
+        lines.append("(Depends on)")
+        if deps:
+            for d in deps:
+                s = f"  ^ [{STATUS_MARK_MAP.get(d.status, '?')}] "
+                s += f"({d.id[:6]:<6}) "
+                s += f"{d.title} "
+                s += f"[{d.due_date}]" if d.due_date else ""
+                lines.append(s)
+        else:
+            lines.append("  ^")
+        # ---
+        lines.append("(Selected)")
+        s = f"  - [{STATUS_MARK_MAP.get(task.status, '?')}] "
+        s += f"({task.id[:6]:<6}) "
+        s += f"{task.title} "
+        s += f"[{task.due_date}]" if task.due_date else ""
+        lines.append(s)
+        # ---
+        lines.append("(Depended by)")
+        if children:
+            for c in children:
+                s = f"  v [{STATUS_MARK_MAP.get(c.status, '?')}] "
+                s += f"({c.id[:6]:<6}) "
+                s += f"{c.title} "
+                s += f"[{c.due_date}]" if c.due_date else ""
+                lines.append(s)
+        else:
+            lines.append("  v")
+        # ---
+        lines.append("-" * 12)  # 12は"Depended by:"の長さ
+
+        self.state.overlay = OverlayState(
+            title="Local DAG (deps/children)",
+            lines=lines,
+        )
+        self.state.mode = "overlay"
+
+    def _handle_overlay_key(self, key: int) -> None:
+        """Close overlay on any key."""
+        if key in (27,):  # ESC
+            self.state.mode = "list"
+            self.state.overlay = None
+            return
 
     # ---- small helpers --------------------------------------------------
 
@@ -628,7 +742,7 @@ class App:
                 self.state.message = f"Error (add): {e}"
                 return
             else:
-                self.state.message = f"Added: {task.id[:6]}"
+                self.state.message = f"Added: {task.id[:6]:<6}"
                 self._reload_tasks(keep_task_id=task.id)
         # edit task
         elif dlg.kind == "edit":
@@ -673,7 +787,7 @@ class App:
                 self.state.message = f"Error (request): {e}"
                 return
             else:
-                self.state.message = f"Requested: {dlg.target_task_id[:6]}"
+                self.state.message = f"Requested: {dlg.target_task_id[:6]:<6}"
                 self._reload_tasks(keep_task_id=dlg.target_task_id)
 
         else:
@@ -761,7 +875,7 @@ class App:
         except OpsError as e:
             self.state.message = f"Error: {e}"
         else:
-            self.state.message = f"Status -> {status}: {task.id[:6]}"
+            self.state.message = f"Status -> {status}: {task.id[:6]:<6}"
             self._reload_tasks(keep_task_id=task.id)
 
     def _toggle_archive_tree(self, *, archive: bool) -> None:
@@ -854,6 +968,11 @@ class App:
             self._handle_dialog_key(key)
             return True
 
+        # in overlay
+        if self.state.mode == "overlay" and self.state.overlay is not None:
+            self._handle_overlay_key(key)
+            return True
+
         # key に応じて state を更新し、必要なら ops を呼ぶ
         # True を返したら継続、False ならループ終了
         if key in (ord("q"), ord("Q")):
@@ -908,6 +1027,9 @@ class App:
         elif key in (ord("R"),):
             # requested
             self._start_request_dialog()
+        elif key in (ord("G"),):
+            # graph overlay
+            self._start_graph_overlay()
         return True
 
 

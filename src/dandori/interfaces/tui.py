@@ -38,8 +38,10 @@ DialogKind = Literal[
     "request",
 ]
 
-HEADER_TITLE = "dandori TUI  "
-HEADER_TITLE += "[↑/↓, (q)uit, (a)dd, (e)dit, (p)ending, (i)n_progress, (d)one, (r)equested, (x)archive, (u)narchive]"
+HEADER_TITLE = "dandori TUI  [↑/↓, (q)uit, "
+HEADER_TITLE += "(f)ilter, (a)rchived, (r)equested, (t)opo, "
+HEADER_TITLE += "(p)end, (i)n_progress, (d)one, (x)archive, (u)narchive, "
+HEADER_TITLE += "(A)dd, (E)dit, (R)equest]"
 
 
 @dataclass
@@ -206,7 +208,36 @@ class App:
         self.stdscr.refresh()
 
     def _draw_header(self, y: int, width: int) -> None:
+        f = self.state.filter
+
+        # status表示
+        status_label_map = {
+            None: "all",
+            "pending": "pending",
+            "in_progress": "in_progress",
+            "done": "done",
+            "requested": "requested",
+            "removed": "removed",
+        }
+        status_label = status_label_map.get(f.status, "all")
+
+        # archived表示
+        if f.archived is True:
+            archived_label = "archived"
+        elif f.archived is False:
+            archived_label = "active"
+        else:
+            archived_label = "all"
+
+        # requested_only表示
+        req_label = "on" if f.requested_only else "off"
+
+        # topo表示
+        topo_label = "on" if f.topo else "off"
+
+        # ヘッダータイトルを作成
         title = HEADER_TITLE
+        title += f" [sta={status_label}, arc={archived_label}, req={req_label}, topo={topo_label}]"
         if curses.has_colors():
             self.stdscr.attron(curses.color_pair(1))
         self._safe_addnstr(y, 0, title.ljust(width), width)
@@ -223,7 +254,8 @@ class App:
 
     def _draw_list(self, y: int, height: int, width: int) -> None:
         tasks = self.state.tasks
-        rows_to_draw = min(height, len(tasks))
+        total_rows = len(tasks) + 1  # +1 はルートタスク追加用のダミー行
+        rows_to_draw = min(height, total_rows)
         for idx in range(rows_to_draw):
             row_y = y + idx
             attrs = 0
@@ -383,14 +415,15 @@ class App:
 
     def _current_task(self) -> Task | None:
         """Return currently selected task or None."""
-        if not self.state.tasks:
+        tasks = self.state.tasks
+        if not tasks:
             return None
         # index 0 はルートタスク追加用のダミー行として扱う
         idx = self.state.selected_index
         if idx <= 0:
             return None
         real_idx = idx - 1
-        if not (0 <= real_idx < len(self.state.tasks)):
+        if not (0 <= real_idx < len(tasks)):
             return None
         return self.state.tasks[real_idx]
 
@@ -756,6 +789,65 @@ class App:
             # keep_task_id はとりあえず指定しない
             self._reload_tasks()
 
+    # ---- filter helpers -------------------------------------------------
+
+    def _cycle_status_filter(self) -> None:
+        """Cycle status filter: all -> pending -> in_prog -> done -> requested -> all."""
+        order: list[str | None] = [None, "pending", "in_progress", "done", "requested"]
+        current = self.state.filter.status
+        try:
+            idx = order.index(current)
+        except ValueError:
+            idx = 0
+        idx = (idx + 1) % len(order)
+        self.state.filter.status = order[idx]
+
+        label_map = {
+            None: "all",
+            "pending": "pending",
+            "in_progress": "in_prog",
+            "done": "done",
+            "requested": "requested",
+        }
+        label = label_map.get(self.state.filter.status, "all")
+        self.state.message = f"Filter: status={label}"
+        self._reload_tasks()
+
+    def _cycle_archived_filter(self) -> None:
+        """Cycle archived filter: active -> archived -> all -> active."""
+        order: list[bool | None] = [False, True, None]
+        current = self.state.filter.archived
+        try:
+            idx = order.index(current)
+        except ValueError:
+            idx = 0
+        idx = (idx + 1) % len(order)
+        self.state.filter.archived = order[idx]
+
+        if self.state.filter.archived is True:
+            label = "archived"
+        elif self.state.filter.archived is False:
+            label = "active"
+        else:
+            label = "all"
+
+        self.state.message = f"Filter: archived={label}"
+        self._reload_tasks()
+
+    def _toggle_requested_only_filter(self) -> None:
+        """Toggle requested_only filter."""
+        self.state.filter.requested_only = not self.state.filter.requested_only
+        label = "on" if self.state.filter.requested_only else "off"
+        self.state.message = f"Filter: requested_only={label}"
+        self._reload_tasks()
+
+    def _toggle_topo(self) -> None:
+        """Toggle topo ordering."""
+        self.state.filter.topo = not self.state.filter.topo
+        label = "on" if self.state.filter.topo else "off"
+        self.state.message = f"Topo={label}"
+        self._reload_tasks()
+
     def handle_key(self, key: int) -> bool:  # noqa: C901
         # in dialog
         if self.state.mode == "dialog" and self.state.dialog is not None:
@@ -776,30 +868,46 @@ class App:
             self.state.selected_index -= 1
         elif key in (curses.KEY_DOWN,) and self.state.selected_index < len(self.state.tasks):
             self.state.selected_index += 1
-        elif key in (ord("a"), ord("A")):
-            # add new task
-            self._start_add_dialog()
-        elif key in (ord("e"), ord("E")):
-            # edit current task
-            self._start_edit_dialog()
-        elif key in (ord("p"), ord("P")):
+
+        # shortcut keys
+        elif key in (ord("f"),):
+            # status filter cycle
+            self._cycle_status_filter()
+        elif key in (ord("a"),):
+            # archived filter cycle
+            self._cycle_archived_filter()
+        elif key in (ord("r"),):
+            # requested_only toggle
+            self._toggle_requested_only_filter()
+        elif key in (ord("t"),):
+            # topo on/off
+            self._toggle_topo()
+        elif key in (ord("p"),):
             # pending
             self._set_status("pending")
-        elif key in (ord("i"), ord("I")):
+        elif key in (ord("i"),):
             # in_progress
             self._set_status("in_progress")
-        elif key in (ord("d"), ord("D")):
+        elif key in (ord("d"),):
             # done
             self._set_status("done")
-        elif key in (ord("r"), ord("R")):
-            # requested (簡易版: 詳細入力は Step3 で対応)
-            self._start_request_dialog()
-        elif key in (ord("x"), ord("X")):
+        elif key in (ord("x"),):
             # archive tree
             self._toggle_archive_tree(archive=True)
-        elif key in (ord("u"), ord("U")):
+        elif key in (ord("u"),):
             # unarchive tree
             self._toggle_archive_tree(archive=False)
+
+        # dialog keys
+        elif key in (ord("A"),):
+            # add new task
+            self._start_add_dialog()
+        elif key in (ord("E"),):
+            # edit current task
+            self._start_edit_dialog()
+        elif key in (ord("R"),):
+            # requested
+            self._start_request_dialog()
         return True
 
 

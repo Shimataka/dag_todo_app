@@ -19,6 +19,7 @@ from dandori.core.ops import (
     update_task,
 )
 from dandori.core.validate import detect_cycles, detect_inconsistencies
+from dandori.interfaces import tui
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
@@ -388,6 +389,16 @@ def cmd_check(args: argparse.Namespace) -> int:  # noqa: ARG001
     return 0
 
 
+def cmd_tui(args: argparse.Namespace) -> int:
+    try:
+        tui.run(args)
+    except OpsError as e:
+        print(f"Error: {e}")
+        return 1
+    else:
+        return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -499,6 +510,10 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     sp = sub.add_parser("check", help="check DAG for cycles and inconsistencies")
     sp.set_defaults(func=cmd_check)
+
+    # tui
+    sp = sub.add_parser("tui", help="run TUI")
+    sp.set_defaults(func=cmd_tui)
 
     return p
 

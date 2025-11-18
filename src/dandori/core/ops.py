@@ -12,7 +12,7 @@ from dandori.util.ids import gen_task_id
 from dandori.util.time import now_iso
 
 if TYPE_CHECKING:
-    from datetime import date, datetime
+    from datetime import datetime
 
 
 Status = Literal["pending", "in_progress", "done", "requested", "removed"]
@@ -95,7 +95,7 @@ def add_task(
     overwrite_id_by: str | None = None,
     description: str = "",
     priority: int | None = None,
-    start: date | None = None,
+    start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
 ) -> Task:
@@ -148,7 +148,7 @@ def update_task(
     title: str | None = None,
     description: str | None = None,
     priority: int | None = None,
-    start: date | None = None,
+    start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
 ) -> Task:

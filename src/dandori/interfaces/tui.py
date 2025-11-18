@@ -3,6 +3,7 @@ import curses
 import locale
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 
 from dandori.core.models import Task
@@ -50,12 +51,21 @@ class FilterState:
 
 
 @dataclass
+class FieldState:
+    """Single-line field in a dialog form."""
+
+    name: str  # title, description, priorityなど
+    label: str  # 画面表示用ラベル
+    buffer: str = ""  # 編集中テキスト
+    cursor: int = 0  # カーソル位置
+
+
+@dataclass
 class DialogState:
     kind: DialogKind
     title: str
-    prompt: str  # 入力フィールドのプロンプト
-    buffer: str = ""  # 編集中テキスト
-    cursor: int = 0  # カーソル位置
+    fields: list[FieldState] = field(default_factory=list)
+    current_index: int = 0  # 現在のフィールドインデックス
     target_task_id: str | None = None  # 編集対象のタスクID
 
 
@@ -295,21 +305,21 @@ class App:
     def _draw_detail_lines(self, t: Task) -> list[str]:
         lines: list[str] = []
         lines.append(f"ID: {t.id}")
-        lines.append(f"Title: {t.title}")
+        lines.append(f"Title       : {t.title}")
         status: str = t.status
         if t.is_archived:
             status += " (archived)"
-        lines.append(f"Status: {status}")
-        lines.append(f"Priority: {t.priority}")
-        lines.append(f"Start: {t.start_date or 'No start date'}")
-        lines.append(f"Due:   {t.due_date or 'No due date'}")
-        lines.append("Tags: ")
+        lines.append(f"Status      : {status}")
+        lines.append(f"Priority    : {t.priority}")
+        lines.append(f"Start       : {t.start_date or ''}")
+        lines.append(f"Due         : {t.due_date or ''}")
+        lines.append("Tags        : ")
         lines.extend(["  - " + tag for tag in t.tags])
-        lines.append("Depends on: ")
+        lines.append("Depends on  : ")
         lines.extend(["  - " + dep for dep in t.depends_on])
-        lines.append("Children:   ")
+        lines.append("Children    :   ")
         lines.extend(["  - " + child for child in t.children])
-        lines.append("Description:")
+        lines.append("Description : ")
         lines.extend(["  " + line for line in t.description.splitlines() or []])
         return lines
 
@@ -321,8 +331,12 @@ class App:
         if dlg is None:
             return
 
+        num_fields = len(dlg.fields)
+        if num_fields == 0:
+            return
+
         box_width = min(80, max_x - 4)
-        box_height = 5  # title + prompt + input + margin
+        box_height = 3 + num_fields + 1  # title + empty + fields + hint
 
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
@@ -332,23 +346,26 @@ class App:
             self._safe_addnstr(top + row, left, " " * box_width, box_width)
 
         # タイトル
-        title = f"{dlg.buffer}"
-        self._safe_addnstr(top + 1, left + 1, title.ljust(box_width), box_width)
-        # プロンプト
-        prompt = dlg.prompt
-        self._safe_addnstr(top + 1, left, prompt.ljust(box_width), box_width)
-        # 入力行
-        buf_display = dlg.buffer
-        # box内で表示できるだけ切り出す
-        max_input_width = box_width - 2
-        if len(buf_display) > max_input_width:
-            buf_display = buf_display[-max_input_width:]
-        line = "> " + buf_display
-        self._safe_addnstr(top + 2, left, line.ljust(box_width), box_width)
+        title = f"[{dlg.title}]"
+        self._safe_addnstr(top, left, title.ljust(box_width), box_width)
+        # 空行
+        self._safe_addnstr(top + 1, left, " " * box_width, box_width)
+        # フィールド群
+        max_input_width = box_width - 18  # ラベル用の適用な余白
+        row = top + 2
+        for idx, fs in enumerate[FieldState](dlg.fields):
+            marker = ">" if idx == dlg.current_index else " "
+            label = f"{marker} {fs.label}: "
+            value = fs.buffer
+            if len(value) > max_input_width:
+                value = value[-max_input_width:]
+            line = (label + value)[:box_width]
+            self._safe_addnstr(row, left, line.ljust(box_width), box_width)
+            row += 1
 
         # ヒント
-        hint = "[Enter: OK, Esc: Cancel]"
-        self._safe_addnstr(top + 3, left, hint.ljust(box_width), box_width)
+        hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
+        self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
 
     # ---- small helpers --------------------------------------------------
 
@@ -361,70 +378,206 @@ class App:
         return self.state.tasks[self.state.selected_index]
 
     def _start_add_dialog(self) -> None:
-        """Open dialog to add a new top-level task (title only)"""
+        """Open dialog to add a new top-level task"""
+        fields = [
+            FieldState(
+                name="title",
+                label="Title                   ",
+                buffer="",
+                cursor=0,
+            ),
+            FieldState(
+                name="priority",
+                label="Priority (0-9)          ",
+                buffer="",
+                cursor=0,
+            ),
+            FieldState(
+                name="start_date",
+                label="Start Date (ISO format) ",
+                buffer="",
+                cursor=0,
+            ),
+            FieldState(
+                name="due_date",
+                label="Due Date (ISO format)   ",
+                buffer="",
+                cursor=0,
+            ),
+            FieldState(
+                name="tags",
+                label="Tags (',' separated)    ",
+                buffer="",
+                cursor=0,
+            ),
+            FieldState(
+                name="description",
+                label="Description             ",
+                buffer="",
+                cursor=0,
+            ),
+        ]
         self.state.dialog = DialogState(
             kind="add",
             title="Add New Task",
-            prompt="Title: ",
-            buffer="",
-            cursor=0,
+            fields=fields,
+            current_index=0,
             target_task_id=None,
         )
         self.state.mode = "dialog"
 
     def _start_edit_dialog(self) -> None:
-        """Open dialog to edit the current task (title only)"""
+        """Open dialog to edit the current task"""
         task = self._current_task()
         if task is None:
             self.state.message = "No task selected"
             return
+        fields = [
+            FieldState(
+                name="title",
+                label="Title                   ",
+                buffer=task.title,
+                cursor=len(task.title),
+            ),
+            FieldState(
+                name="priority",
+                label="Priority (0-9)          ",
+                buffer=str(task.priority),
+                cursor=len(str(task.priority)),
+            ),
+            FieldState(
+                name="start_date",
+                label="Start Date (ISO format) ",
+                buffer=task.start_date or "",
+                cursor=len(task.start_date or ""),
+            ),
+            FieldState(
+                name="due_date",
+                label="Due Date (ISO format)   ",
+                buffer=task.due_date or "",
+                cursor=len(task.due_date or ""),
+            ),
+            FieldState(
+                name="tags",
+                label="Tags (',' separated)    ",
+                buffer=", ".join(task.tags),
+                cursor=len(", ".join(task.tags)),
+            ),
+            FieldState(
+                name="description",
+                label="Description             ",
+                buffer=task.description,
+                cursor=len(task.description),
+            ),
+        ]
         self.state.dialog = DialogState(
             kind="edit",
             title="Edit Task",
-            prompt="Title: ",
-            buffer=task.title,
-            cursor=len(task.title),
+            fields=fields,
+            current_index=0,
             target_task_id=task.id,
         )
         self.state.mode = "dialog"
 
-    def _apply_dialog(self) -> None:
+    def _apply_dialog(self) -> None:  # noqa: C901
         """Apply the dialog result (add/edit)"""
         dlg = self.state.dialog
         if dlg is None:
             return
-        text = dlg.buffer.strip()
-        if not text:
+        # フィールドをdictにまとめる
+        values: dict[str, str] = {f.name: f.buffer.strip() for f in dlg.fields}
+        # title (required)
+        if (title := values.get("title")) is None:
             self.state.message = "Empty title: canceled"
             return
-        if dlg.kind == "add":
+        # priority (optional)
+        if (_priority := values.get("priority")) is not None and _priority != "":
             try:
-                parent_ids = [dlg.target_task_id] if dlg.target_task_id else []
-                task = add_task(title=text, parent_ids=parent_ids)
+                priority = int(_priority)
+            except ValueError:
+                self.state.message = f"Invalid priority value '{_priority}': canceled"
+                return
+        else:
+            priority = 0
+        # start_date (optional)
+        if (_start_date := values.get("start_date")) is not None and _start_date != "":
+            try:
+                start_date = datetime.fromisoformat(_start_date)
+            except ValueError:
+                self.state.message = f"Invalid start date value '{_start_date}': canceled"
+                return
+        else:
+            start_date = None
+        # due_date (optional)
+        if (_due_date := values.get("due_date")) is not None and _due_date != "":
+            try:
+                due_date = datetime.fromisoformat(_due_date)
+            except ValueError:
+                self.state.message = f"Invalid due date value '{_due_date}': canceled"
+                return
+        else:
+            due_date = None
+        # tags (optional)
+        tags = _tags.split(",") if (_tags := values.get("tags")) else None
+
+        # add task
+        if dlg.kind == "add":
+            # 親は「現在選択中のタスク」で、なければルートタスク
+            parent_ids: list[str] = []
+            current = self._current_task()
+            if current is not None:
+                parent_ids = [current.id]
+
+            try:
+                task = add_task(
+                    title=title,
+                    parent_ids=parent_ids,
+                    description=values.get("description") or "",
+                    priority=priority,
+                    start=start_date,
+                    due=due_date,
+                    tags=tags,
+                )
             except OpsError as e:
                 self.state.message = f"Error (add): {e}"
                 return
             else:
                 self.state.message = f"Added: {task.id[:6]}"
                 self._reload_tasks(keep_task_id=task.id)
+        # edit task
         elif dlg.kind == "edit":
             if dlg.target_task_id is None:
                 self.state.message = "No task selected for edit"
                 return
             try:
-                task = update_task(dlg.target_task_id, title=text)
+                task = update_task(
+                    dlg.target_task_id,
+                    title=title,
+                    description=values.get("description") or "",
+                    priority=priority,
+                    start=start_date,
+                    due=due_date,
+                    tags=tags,
+                )
             except OpsError as e:
                 self.state.message = f"Error (edit): {e}"
                 return
             else:
                 self.state.message = f"Updated: {task.id[:6]}"
                 self._reload_tasks(keep_task_id=task.id)
+        else:
+            _msg = f"Invalid dialog kind: {dlg.kind}"  # type: ignore[unreachable]
+            logger.error(_msg)
+            self.state.message = _msg
+            return
 
     def _handle_dialog_key(self, key: int) -> None:  # noqa: C901
         """Handle key press while dialog is active."""
         dlg = self.state.dialog
         if dlg is None:
             return
+
+        fs = dlg.fields[dlg.current_index]
 
         # Enter: apply
         if key in (curses.KEY_ENTER, 10, 13):
@@ -441,28 +594,42 @@ class App:
             self.state.mode = "list"
             return
 
+        # フィールド移動
+        if key in (curses.KEY_DOWN, 9):  # Down Arrow or Tab
+            dlg.current_index = (dlg.current_index + 1) % len(dlg.fields)
+            # カーソルは語尾におく
+            f = dlg.fields[dlg.current_index]
+            f.cursor = len(f.buffer)
+            return
+        if key in (curses.KEY_UP,):  # Up Arrow
+            dlg.current_index = (dlg.current_index - 1) % len(dlg.fields)
+            # カーソルは語尾におく
+            f = dlg.fields[dlg.current_index]
+            f.cursor = len(f.buffer)
+            return
+
         # Backspace: delete char
         if key in (curses.KEY_BACKSPACE, 127, 8):
-            if dlg.cursor > 0:
-                dlg.buffer = dlg.buffer[: dlg.cursor - 1] + dlg.buffer[dlg.cursor :]
-                dlg.cursor -= 1
+            if fs.cursor > 0:
+                fs.buffer = fs.buffer[: fs.cursor - 1] + fs.buffer[fs.cursor :]
+                fs.cursor -= 1
             return
 
         # 左右移動
         if key == curses.KEY_LEFT:
-            if dlg.cursor > 0:
-                dlg.cursor -= 1
+            if fs.cursor > 0:
+                fs.cursor -= 1
             return
         if key == curses.KEY_RIGHT:
-            if dlg.cursor < len(dlg.buffer):
-                dlg.cursor += 1
+            if fs.cursor < len(fs.buffer):
+                fs.cursor += 1
             return
 
-        # 文字入力
+        # 文字入力 (ASCII 32-126)
         if 32 <= key <= 126:
             ch = chr(key)
-            dlg.buffer = dlg.buffer[: dlg.cursor] + ch + dlg.buffer[dlg.cursor :]
-            dlg.cursor += 1
+            fs.buffer = fs.buffer[: fs.cursor] + ch + fs.buffer[fs.cursor :]
+            fs.cursor += 1
             return
 
     def _set_status(self, status: str) -> None:

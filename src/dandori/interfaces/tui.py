@@ -135,18 +135,19 @@ class App:
         if keep_task_id is not None:
             for idx, t in enumerate[Task](self.state.tasks):
                 if t.id == keep_task_id:
-                    self.state.selected_index = idx
+                    # index 0 はルートタスク追加用のダミー行として扱う
+                    self.state.selected_index = idx + 1
                     break
             else:
                 # 見つからなければ clamp
                 self.state.selected_index = max(
                     0,
-                    min(self.state.selected_index, len(self.state.tasks) - 1),
+                    min(self.state.selected_index, len(self.state.tasks)),
                 )
         else:
             self.state.selected_index = max(
                 0,
-                min(self.state.selected_index, len(self.state.tasks) - 1),
+                min(self.state.selected_index, len(self.state.tasks)),
             )
 
     def _safe_addnstr(self, y: int, x: int, s: str, n: int) -> None:
@@ -221,21 +222,23 @@ class App:
 
     def _draw_list(self, y: int, height: int, width: int) -> None:
         tasks = self.state.tasks
-        for idx in range(min(height, len(tasks))):
+        rows_to_draw = min(height, len(tasks))
+        for idx in range(rows_to_draw):
             row_y = y + idx
-            t = tasks[idx]
-            is_selected = idx == self.state.selected_index
-            line = self._format_list_line(t, width)
-
             attrs = 0
-            if is_selected:
+            if idx == self.state.selected_index:
                 if curses.has_colors():
                     attrs |= curses.color_pair(2)
                 attrs |= curses.A_REVERSE
-
             if attrs:
                 self.stdscr.attron(attrs)
-            self._safe_addnstr(row_y, 0, line.ljust(width), width)
+            if idx == 0:
+                line = "[--- Add a task ---]"
+                self._safe_addnstr(row_y, 0, line.ljust(width), width)
+            else:
+                t = tasks[idx - 1]
+                line = self._format_list_line(t, width)
+                self._safe_addnstr(row_y, 0, line.ljust(width), width)
             if attrs:
                 self.stdscr.attroff(attrs)
 
@@ -284,9 +287,13 @@ class App:
                 self.stdscr.attroff(0)
             return
 
-        t = self.state.tasks[self.state.selected_index]
-        lines = self._draw_detail_lines(t)
+        t = self._current_task()
+        if t is None:
+            text = "<If enter/'a' is pressed, you can add a new root task>"
+            self._safe_addnstr(y, x, text.ljust(width), width)
+            return
 
+        lines = self._draw_detail_lines(t)
         row = 0
         for line in lines:
             if row >= height:
@@ -373,9 +380,14 @@ class App:
         """Return currently selected task or None."""
         if not self.state.tasks:
             return None
-        if not (0 <= self.state.selected_index < len(self.state.tasks)):
+        # index 0 はルートタスク追加用のダミー行として扱う
+        idx = self.state.selected_index
+        if idx <= 0:
             return None
-        return self.state.tasks[self.state.selected_index]
+        real_idx = idx - 1
+        if not (0 <= real_idx < len(self.state.tasks)):
+            return None
+        return self.state.tasks[real_idx]
 
     def _start_add_dialog(self) -> None:
         """Open dialog to add a new top-level task"""
@@ -624,6 +636,12 @@ class App:
             if fs.cursor < len(fs.buffer):
                 fs.cursor += 1
             return
+        if key == curses.KEY_HOME:
+            fs.cursor = 0
+            return
+        if key == curses.KEY_END:
+            fs.cursor = len(fs.buffer)
+            return
 
         # 文字入力 (ASCII 32-126)
         if 32 <= key <= 126:
@@ -698,10 +716,15 @@ class App:
         # True を返したら継続、False ならループ終了
         if key in (ord("q"), ord("Q")):
             return False
+        # ダミー行でのEnter
+        if key in (curses.KEY_ENTER, 10, 13) and self.state.selected_index == 0:
+            # add new task
+            self._start_add_dialog()
+            return True
 
         if key in (curses.KEY_UP,) and self.state.selected_index > 0:
             self.state.selected_index -= 1
-        elif key in (curses.KEY_DOWN,) and self.state.selected_index < len(self.state.tasks) - 1:
+        elif key in (curses.KEY_DOWN,) and self.state.selected_index < len(self.state.tasks):
             self.state.selected_index += 1
         elif key in (ord("a"), ord("A")):
             # add new task

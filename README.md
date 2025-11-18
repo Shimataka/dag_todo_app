@@ -17,7 +17,7 @@ DAG（有向非巡回グラフ）で依存関係を管理するタスク管理�
 
 - Python >=3.13
 - PyYAML >=6.0.1
-- PyResults >=0.2.0
+- [PyResults](https://github.com/Shimataka/resulttype_python) >=0.2.0
 
 ### セットアップ
 

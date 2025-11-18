@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -146,10 +146,10 @@ class TestOps(unittest.TestCase):
 
     def test_add_task_with_dates(self) -> None:
         """日付を指定してタスクを追加できることを確認"""
-        start = date(2024, 1, 1)
+        start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=JST)
         due = datetime(2024, 12, 31, 23, 59, 59, tzinfo=JST)
         task = ops.add_task([], "タスク", start=start, due=due)
-        assert task.start_date == "2024-01-01"
+        assert task.start_date == "2024-01-01T00:00:00"
         assert task.due_date == "2024-12-31T23:59:59"
 
     def test_add_task_with_tags(self) -> None:
@@ -178,10 +178,10 @@ class TestOps(unittest.TestCase):
     def test_update_task_dates(self) -> None:
         """タスクの日付を更新できることを確認"""
         task = ops.add_task([], "タスク")
-        start = date(2024, 6, 1)
-        due = datetime(2024, 6, 30, 12, 0, 0)  # noqa: DTZ001
+        start = datetime(2024, 6, 1, 0, 0, 0, tzinfo=JST)
+        due = datetime(2024, 6, 30, 12, 0, 0, tzinfo=JST)
         updated = ops.update_task(task.id, start=start, due=due)
-        assert updated.start_date == "2024-06-01"
+        assert updated.start_date == "2024-06-01T00:00:00"
         assert updated.due_date == "2024-06-30T12:00:00"
 
     def test_update_task_tags(self) -> None:

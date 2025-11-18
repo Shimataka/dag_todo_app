@@ -117,7 +117,7 @@ def add_task(
         title=title,
         description=description or "",
         priority=priority or 0,
-        start_date=start.isoformat() if start else None,
+        start_date=start.strftime("%Y-%m-%dT%H:%M:%S") if start else None,
         due_date=due.strftime("%Y-%m-%dT%H:%M:%S") if due else None,
         tags=tags or [],
         metadata={},
@@ -173,7 +173,7 @@ def update_task(
     if priority is not None:
         t.priority = priority
     if start is not None:
-        t.start_date = start.isoformat()
+        t.start_date = start.strftime("%Y-%m-%dT%H:%M:%S")
     if due is not None:
         t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
     if tags is not None:

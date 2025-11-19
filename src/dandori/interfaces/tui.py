@@ -62,6 +62,8 @@ SURPRESSED_COLOR = 4
 COMPLETED_COLOR = 5
 WORKING_COLOR = 6
 WAITING_COLOR = 7
+DIALOG_BG_COLOR = 8
+OVERLAY_BG_COLOR = 9
 
 
 @dataclass
@@ -142,6 +144,8 @@ class App:
             curses.init_pair(COMPLETED_COLOR, 10, -1)  # done/requested
             curses.init_pair(WORKING_COLOR, 9, -1)  # in_progress
             curses.init_pair(WAITING_COLOR, 15, -1)  # pending
+            curses.init_pair(DIALOG_BG_COLOR, -1, 236)  # dialog-bg
+            curses.init_pair(OVERLAY_BG_COLOR, -1, 236)  # overlay-bg
 
     def _reload_tasks(self, keep_task_id: str | None = None) -> None:
         """Reload tasks from backend according to filter."""
@@ -437,6 +441,12 @@ class App:
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
 
+        # bg color on
+        attr = 0
+        if curses.has_colors():
+            attr |= curses.color_pair(DIALOG_BG_COLOR)
+        self.stdscr.attron(attr)
+
         # 枠線と中線をクリア
         for row in range(box_height):
             self._safe_addnstr(top + row, left, " " * box_width, box_width)
@@ -463,6 +473,10 @@ class App:
         hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
         self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
 
+        # bg color off
+        if curses.has_colors() and attr:
+            self.stdscr.attroff(attr)
+
     # ---- overlay --------------------------------------------------------
 
     def _draw_overlay(self, content_y: int, content_height: int, max_x: int) -> None:
@@ -470,6 +484,12 @@ class App:
         ov = self.state.overlay
         if ov is None or not ov.lines:
             return
+
+        # bg color on
+        attr = 0
+        if curses.has_colors():
+            attr |= curses.color_pair(OVERLAY_BG_COLOR)
+        self.stdscr.attron(attr)
 
         # 行数で高さを決める
         box_width = min(100, max_x - 4)
@@ -498,6 +518,10 @@ class App:
         # ヒント
         hint = "[ESC key: close]"
         self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
+
+        # bg color off
+        if curses.has_colors() and attr:
+            self.stdscr.attroff(attr)
 
     # ---- overlay helpers ------------------------------------------------
 

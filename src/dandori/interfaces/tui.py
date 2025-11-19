@@ -60,6 +60,7 @@ ADD_TASK_COLOR = 2
 SELECTED_ROW_COLOR = 3
 SURPRESSED_COLOR = 4
 COMPLETED_COLOR = 5
+REQUESTED_COLOR = 10
 WORKING_COLOR = 6
 WAITING_COLOR = 7
 DIALOG_BG_COLOR = 8
@@ -112,8 +113,15 @@ class AppState:
     overlay: OverlayState | None = None
 
     # UI用
-    message: str | None = None  # フッターメッセージ表示
-    show_help: bool = False  # [h]キーでヘルプ表示トグル
+    msg_footer: str | None = None  # フッターメッセージ表示
+    window_list_width: int = 0
+    window_list_height: int = 0
+    window_detail_width: int = 0
+    window_detail_height: int = 0
+
+    # scroll用
+    list_offset: int = 0  # list viewのstart rowのオフセット
+    detail_offset: int = 0  # detail viewのstart rowのオフセット
 
 
 class App:
@@ -141,7 +149,8 @@ class App:
             curses.init_pair(ADD_TASK_COLOR, 166, -1)  # add-task
             curses.init_pair(SELECTED_ROW_COLOR, -1, 7)  # selected-row
             curses.init_pair(SURPRESSED_COLOR, 8, -1)  # archived/removed
-            curses.init_pair(COMPLETED_COLOR, 10, -1)  # done/requested
+            curses.init_pair(COMPLETED_COLOR, 10, -1)  # done
+            curses.init_pair(REQUESTED_COLOR, 12, -1)  # requested
             curses.init_pair(WORKING_COLOR, 9, -1)  # in_progress
             curses.init_pair(WAITING_COLOR, 15, -1)  # pending
             curses.init_pair(DIALOG_BG_COLOR, -1, 236)  # dialog-bg
@@ -169,6 +178,8 @@ class App:
         # clamp / restore selection index
         if not self.state.tasks:
             self.state.selected_index = 0
+            self.state.list_offset = 0
+            self.state.detail_offset = 0
             return
         # できるだけ同じタスクIDを再選択する
         if keep_task_id is not None:
@@ -189,8 +200,18 @@ class App:
                 min(self.state.selected_index, len(self.state.tasks)),
             )
 
+        # reload時は先頭から表示し直す
+        self.state.list_offset = 0
+        self.state.detail_offset = 0
+
     def _safe_addnstr(self, y: int, x: int, s: str, n: int) -> None:
+        # 画面サイズを更新
         max_y, max_x = self.stdscr.getmaxyx()
+        self.state.window_list_width = max_x // 2
+        self.state.window_detail_width = max_x - self.state.window_list_width
+        self.state.window_list_height = max_y - 1
+        self.state.window_detail_height = max_y - 1
+
         # 画面外なら描かない
         if y < 0 or y >= max_y or x < 0 or x >= max_x:
             return
@@ -283,7 +304,7 @@ class App:
             self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
 
     def _draw_footer(self, y: int, width: int) -> None:
-        msg = self.state.message or ""
+        msg = self.state.msg_footer or ""
         if curses.has_colors():
             self.stdscr.attron(0)
         self._safe_addnstr(y, 0, msg.ljust(width), width)
@@ -297,21 +318,42 @@ class App:
         width: int,
     ) -> None:
         tasks = self.state.tasks
-        total_rows = len(tasks) + 1  # +1 はルートタスク追加用のダミー行
-        rows_to_draw = min(height, total_rows)
-        for idx in range(rows_to_draw):
-            t = tasks[idx - 1]
-            row_y = y + idx
-            attrs = 0
 
+        # 全行数 (0: ダミー行, 1..len(tasks): 実タスク行)
+        total_rows = len(tasks) + 1  # +1 はルートタスク追加用のダミー行
+        if total_rows <= 0 or height <= 0:
+            return
+
+        # selected_indexをclamp
+        self.state.selected_index = max(0, min(self.state.selected_index, total_rows - 1))
+
+        # list_offsetをclamp
+        if self.state.selected_index < self.state.list_offset:
+            self.state.list_offset = self.state.selected_index
+        elif self.state.selected_index >= self.state.list_offset + height:
+            self.state.list_offset = self.state.selected_index - height + 1
+
+        self.state.list_offset = max(0, min(self.state.list_offset, max(0, total_rows - height)))
+
+        start = self.state.list_offset
+        end = min(start + height, total_rows)
+
+        for i, idx in enumerate[int](range(start, end)):
+            t = tasks[idx - 1]
+            row_y = y + i
+
+            attrs = 0
             # color on
             if curses.has_colors():
                 # add task
                 if idx == 0:
                     attrs |= curses.color_pair(ADD_TASK_COLOR)
-                # completed/requested
-                elif t.status in ("done", "requested"):
+                # done
+                elif t.status == "done":
                     attrs |= curses.color_pair(COMPLETED_COLOR)
+                # requested
+                elif t.status == "requested":
+                    attrs |= curses.color_pair(REQUESTED_COLOR)
                 # archived
                 elif t.is_archived:
                     attrs |= curses.color_pair(SURPRESSED_COLOR)
@@ -329,7 +371,7 @@ class App:
 
             # charactor in list line
             if idx == 0:
-                line = "[--- Add a task ---]"
+                line = "[--- Add a task (Enter or 'A' key) ---]"
                 self._safe_addnstr(row_y, 0, line.ljust(width), width)
             else:
                 line = self._format_list_line(t, width)
@@ -367,6 +409,7 @@ class App:
             self._safe_addnstr(y + row, x, " " * width, width)
             if curses.has_colors():
                 self.stdscr.attroff(0)
+
         if not self.state.tasks:
             text = "(no tasks)"
             if curses.has_colors():
@@ -382,9 +425,20 @@ class App:
             self._safe_addnstr(y, x, text.ljust(width), width)
             return
 
-        lines = self._draw_detail_lines(t)
+        # 表示用の視覚行 (wrap 済み) を構成
+        visual_lines = self._build_detail_lines(t, width)
+        if not visual_lines:
+            visual_lines = ["(no details)"]
+
+        # detail_offset をクランプ
+        max_offset = max(0, len(visual_lines) - max(0, height))
+        self.state.detail_offset = max(0, min(self.state.detail_offset, max_offset))
+
+        start = self.state.detail_offset
+        end = min(start + height, len(visual_lines))
+
         row = 0
-        for line in lines:
+        for line in visual_lines[start:end]:
             if row >= height:
                 break
             start = 0
@@ -398,32 +452,73 @@ class App:
                 start += width
                 row += 1
 
-    def _draw_detail_lines(self, t: Task) -> list[str]:
-        lines: list[str] = []
-        lines.append(f"ID: {t.id}")
-        lines.append(f"Title       : {t.title}")
+    def _build_detail_lines(  # noqa: C901
+        self,
+        t: Task,
+        width: int,
+    ) -> list[str]:
+        """Build wrapped detail lines for a task."""
+        base: list[str] = []
+        base.append(f"ID: {t.id}")
+        base.append(f"Title: {t.title}")
         status: str = t.status
         if t.is_archived:
             status += " (archived)"
-        lines.append(f"Status      : {status}")
-        lines.append(f"Priority    : {t.priority}")
-        lines.append(f"Start       : {t.start_date or ''}")
-        lines.append(f"Due         : {t.due_date or ''}")
-        lines.append("Request")
-        lines.append(f"  - to      : {t.assigned_to or ''}")
-        lines.append(f"  - at      : {t.requested_at or ''}")
-        lines.append(f"  - by      : {t.requested_by or ''}")
-        n_ = t.requested_note or "[No note]"
-        lines.append(f"  - note    : {n_}")
-        lines.append("Tags        : ")
-        lines.extend(["  - " + tag for tag in t.tags])
-        lines.append("Depends on  : ")
-        lines.extend(["  - " + dep for dep in t.depends_on])
-        lines.append("Children    :   ")
-        lines.extend(["  - " + child for child in t.children])
-        d_ = t.description or "[No description]"
-        lines.append(f"Description : {d_}")
-        return lines
+        base.append(f"Status: {status}")
+        base.append(f"Priority: {t.priority}")
+        if t.start_date:
+            base.append(f"Start: {t.start_date}")
+        if t.due_date:
+            base.append(f"Due:   {t.due_date}")
+        if t.tags:
+            base.append("Tags: " + ", ".join(t.tags))
+        if t.depends_on:
+            base.append("Depends on: " + ", ".join(t.depends_on))
+        if t.children:
+            base.append("Children:   " + ", ".join(t.children))
+        if t.description:
+            base.append("")
+            base.append("Description:")
+            base.extend(["  " + line for line in t.description.splitlines()])
+
+        visual: list[str] = []
+        for line in base:
+            if not line:
+                visual.append("")
+                continue
+            s = line
+            while s:
+                chunk = s[:width]
+                visual.append(chunk)
+                s = s[width:]
+        return visual
+
+    def _scroll_detail(self, delta: int) -> None:
+        """Scroll detail view by delta visual lines."""
+        if delta == 0:
+            return
+
+        t = self._current_task()
+        if t is None:
+            return
+
+        max_y, max_x = self.stdscr.getmaxyx()
+        header_height = 1
+        footer_height = 1
+        content_height = max_y - header_height - footer_height
+        if content_height <= 0 or max_x <= 0:
+            return
+
+        list_width = max_x // 2
+        detail_width = max_x - list_width
+
+        visual_lines = self._build_detail_lines(t, detail_width)
+        if not visual_lines:
+            return
+
+        max_offset = max(0, len(visual_lines) - max(0, content_height))
+        new_offset = self.state.detail_offset + delta
+        self.state.detail_offset = max(0, min(new_offset, max_offset))
 
     # ---- dialog ---------------------------------------------------------
 
@@ -529,14 +624,14 @@ class App:
         """Show local graph (deps and children) for current task."""
         task = self._current_task()
         if task is None:
-            self.state.message = "No task selected"
+            self.state.msg_footer = "No task selected"
             return
 
         try:
             deps = get_deps(task.id)
             children = get_children(task.id)
         except OpsError as e:
-            self.state.message = f"Error (graph): {e}"
+            self.state.msg_footer = f"Error (graph): {e}"
             return
 
         lines: list[str] = []
@@ -655,7 +750,7 @@ class App:
         """Open dialog to edit the current task"""
         task = self._current_task()
         if task is None:
-            self.state.message = "No task selected"
+            self.state.msg_footer = "No task selected"
             return
         fields = [
             FieldState(
@@ -708,7 +803,7 @@ class App:
         """Open dialog to mark current task as requested (assignee + note)"""
         task = self._current_task()
         if task is None:
-            self.state.message = "No task selected"
+            self.state.msg_footer = "No task selected"
             return
         # 既知情報を初期値として利用
         initial_assignee = task.assigned_to or ""
@@ -748,7 +843,7 @@ class App:
             try:
                 priority = int(_priority)
             except ValueError:
-                self.state.message = f"Invalid priority value '{_priority}': canceled"
+                self.state.msg_footer = f"Invalid priority value '{_priority}': canceled"
                 return
         else:
             priority = 0
@@ -757,7 +852,7 @@ class App:
             try:
                 start_date = datetime.fromisoformat(_start_date)
             except ValueError:
-                self.state.message = f"Invalid start date value '{_start_date}': canceled"
+                self.state.msg_footer = f"Invalid start date value '{_start_date}': canceled"
                 return
         else:
             start_date = None
@@ -766,7 +861,7 @@ class App:
             try:
                 due_date = datetime.fromisoformat(_due_date)
             except ValueError:
-                self.state.message = f"Invalid due date value '{_due_date}': canceled"
+                self.state.msg_footer = f"Invalid due date value '{_due_date}': canceled"
                 return
         else:
             due_date = None
@@ -781,7 +876,7 @@ class App:
         if dlg.kind == "add":
             # title (required)
             if (title := values.get("title")) is None:
-                self.state.message = "Empty title: canceled"
+                self.state.msg_footer = "Empty title: canceled"
                 return
             # 親は「現在選択中のタスク」で、なければルートタスク
             parent_ids: list[str] = []
@@ -800,19 +895,19 @@ class App:
                     tags=tags,
                 )
             except OpsError as e:
-                self.state.message = f"Error (add): {e}"
+                self.state.msg_footer = f"Error (add): {e}"
                 return
             else:
-                self.state.message = f"Added: {task.id[:6]:<6}"
+                self.state.msg_footer = f"Added: {task.id[:6]:<6}"
                 self._reload_tasks(keep_task_id=task.id)
         # edit task
         elif dlg.kind == "edit":
             # title (required)
             if (title := values.get("title")) is None:
-                self.state.message = "Empty title: canceled"
+                self.state.msg_footer = "Empty title: canceled"
                 return
             if dlg.target_task_id is None:
-                self.state.message = "No task selected for edit"
+                self.state.msg_footer = "No task selected for edit"
                 return
             try:
                 task = update_task(
@@ -825,15 +920,15 @@ class App:
                     tags=tags,
                 )
             except OpsError as e:
-                self.state.message = f"Error (edit): {e}"
+                self.state.msg_footer = f"Error (edit): {e}"
                 return
             else:
-                self.state.message = f"Updated: {task.id[:6]}"
+                self.state.msg_footer = f"Updated: {task.id[:6]}"
                 self._reload_tasks(keep_task_id=task.id)
         elif dlg.kind == "request":
             # title (required)
             if dlg.target_task_id is None:
-                self.state.message = "No task selected for request"
+                self.state.msg_footer = "No task selected for request"
                 return
             try:
                 # requested_by はset_requested内部でenvから補完してもらう
@@ -845,16 +940,16 @@ class App:
                     requested_by=None,
                 )
             except OpsError as e:
-                self.state.message = f"Error (request): {e}"
+                self.state.msg_footer = f"Error (request): {e}"
                 return
             else:
-                self.state.message = f"Requested: {dlg.target_task_id[:6]:<6}"
+                self.state.msg_footer = f"Requested: {dlg.target_task_id[:6]:<6}"
                 self._reload_tasks(keep_task_id=dlg.target_task_id)
 
         else:
             _msg = f"Invalid dialog kind: {dlg.kind}"  # type: ignore[unreachable]
             logger.error(_msg)
-            self.state.message = _msg
+            self.state.msg_footer = _msg
             return
 
     def _handle_dialog_key(self, key: int) -> None:  # noqa: C901
@@ -875,7 +970,7 @@ class App:
 
         # Esc: cancel
         if key in (27,):
-            self.state.message = "Canceled"
+            self.state.msg_footer = "Canceled"
             self.state.dialog = None
             self.state.mode = "list"
             return
@@ -933,22 +1028,22 @@ class App:
         """Wrap core.ops.set_status with error handling and reload."""
         task = self._current_task()
         if task is None:
-            self.state.message = "No task selected"
+            self.state.msg_footer = "No task selected"
             return
 
         try:
             set_status(task.id, status)  # type: ignore[arg-type]
         except OpsError as e:
-            self.state.message = f"Error: {e}"
+            self.state.msg_footer = f"Error: {e}"
         else:
-            self.state.message = f"Status -> {status}: {task.id[:6]:<6}"
+            self.state.msg_footer = f"Status -> {status}: {task.id[:6]:<6}"
             self._reload_tasks(keep_task_id=task.id)
 
     def _toggle_archive_tree(self, *, archive: bool) -> None:
         """Archive or unarchive weakly connected component."""
         task = self._current_task()
         if task is None:
-            self.state.message = "No task selected"
+            self.state.msg_footer = "No task selected"
             return
 
         try:
@@ -959,12 +1054,12 @@ class App:
                 changed = unarchive_tree(task.id)
                 action = "unarchived"
         except OpsError as e:
-            self.state.message = f"Error: {e}"
+            self.state.msg_footer = f"Error: {e}"
         else:
             if changed:
-                self.state.message = f"{action}: {len(changed)} task(s)"
+                self.state.msg_footer = f"{action}: {len(changed)} task(s)"
             else:
-                self.state.message = f"No tasks {action}"
+                self.state.msg_footer = f"No tasks {action}"
             # archive フィルタの有無で一覧に残るかどうかは変わるので、
             # keep_task_id はとりあえず指定しない
             self._reload_tasks()
@@ -990,7 +1085,7 @@ class App:
             "requested": "requested",
         }
         label = label_map.get(self.state.filter.status, "all")
-        self.state.message = f"Filter: status={label}"
+        self.state.msg_footer = f"Filter: status={label}"
         self._reload_tasks()
 
     def _cycle_archived_filter(self) -> None:
@@ -1011,21 +1106,21 @@ class App:
         else:
             label = "all"
 
-        self.state.message = f"Filter: archived={label}"
+        self.state.msg_footer = f"Filter: archived={label}"
         self._reload_tasks()
 
     def _toggle_requested_only_filter(self) -> None:
         """Toggle requested_only filter."""
         self.state.filter.requested_only = not self.state.filter.requested_only
         label = "on" if self.state.filter.requested_only else "off"
-        self.state.message = f"Filter: requested_only={label}"
+        self.state.msg_footer = f"Filter: requested_only={label}"
         self._reload_tasks()
 
     def _toggle_topo(self) -> None:
         """Toggle topo ordering."""
         self.state.filter.topo = not self.state.filter.topo
         label = "on" if self.state.filter.topo else "off"
-        self.state.message = f"Topo={label}"
+        self.state.msg_footer = f"Topo={label}"
         self._reload_tasks()
 
     def handle_key(self, key: int) -> bool:  # noqa: C901
@@ -1049,10 +1144,25 @@ class App:
             self._start_add_dialog()
             return True
 
+        # move up/down
         if key in (curses.KEY_UP,) and self.state.selected_index > 0:
             self.state.selected_index -= 1
+            self.state.detail_offset = 0
         elif key in (curses.KEY_DOWN,) and self.state.selected_index < len(self.state.tasks):
             self.state.selected_index += 1
+            self.state.detail_offset = 0
+        elif key in (curses.KEY_HOME,):
+            self.state.selected_index = 0
+            self.state.detail_offset = 0
+        elif key in (curses.KEY_END,):
+            self.state.selected_index = len(self.state.tasks)
+            self.state.detail_offset = 0
+        elif key in (curses.KEY_PPAGE,):
+            self.state.selected_index -= self.state.window_list_height
+            self.state.detail_offset = 0
+        elif key in (curses.KEY_NPAGE,):
+            self.state.selected_index += self.state.window_list_height
+            self.state.detail_offset = 0
 
         # shortcut keys
         elif key in (ord("f"),):
@@ -1082,6 +1192,12 @@ class App:
         elif key in (ord("u"),):
             # unarchive tree
             self._toggle_archive_tree(archive=False)
+
+        # scroll keys
+        elif key in (ord("["),):
+            self._scroll_detail(-3)
+        elif key in (ord("]"),):
+            self._scroll_detail(+3)
 
         # dialog keys
         elif key in (ord("A"),):

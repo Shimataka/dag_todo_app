@@ -55,6 +55,14 @@ STATUS_MARK_MAP = {
     "archived": "A",
 }
 
+MAIN_THEME_COLOR = 1
+ADD_TASK_COLOR = 2
+SELECTED_ROW_COLOR = 3
+SURPRESSED_COLOR = 4
+COMPLETED_COLOR = 5
+WORKING_COLOR = 6
+WAITING_COLOR = 7
+
 
 @dataclass
 class OverlayState:
@@ -126,11 +134,14 @@ class App:
         if curses.has_colors():
             curses.start_color()
             curses.use_default_colors()
-            # color pair indexes
-            curses.init_pair(1, curses.COLOR_CYAN, -1)  # header
-            curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)  # selected row
-            curses.init_pair(3, curses.COLOR_MAGENTA, -1)  # archived
-            curses.init_pair(4, curses.COLOR_GREEN, -1)  # done/requested
+            # color pair indexes (idx, foreground, background) with ANSI color codes
+            curses.init_pair(MAIN_THEME_COLOR, 166, -1)  # header
+            curses.init_pair(ADD_TASK_COLOR, 166, -1)  # add-task
+            curses.init_pair(SELECTED_ROW_COLOR, -1, 7)  # selected-row
+            curses.init_pair(SURPRESSED_COLOR, 8, -1)  # archived/removed
+            curses.init_pair(COMPLETED_COLOR, 10, -1)  # done/requested
+            curses.init_pair(WORKING_COLOR, 9, -1)  # in_progress
+            curses.init_pair(WAITING_COLOR, 15, -1)  # pending
 
     def _reload_tasks(self, keep_task_id: str | None = None) -> None:
         """Reload tasks from backend according to filter."""
@@ -262,10 +273,10 @@ class App:
         title = HEADER_TITLE
         title += f" [sta={status_label}, arc={archived_label}, req={req_label}, topo={topo_label}]"
         if curses.has_colors():
-            self.stdscr.attron(curses.color_pair(1))
+            self.stdscr.attron(curses.color_pair(MAIN_THEME_COLOR))
         self._safe_addnstr(y, 0, title.ljust(width), width)
         if curses.has_colors():
-            self.stdscr.attroff(curses.color_pair(1))
+            self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
 
     def _draw_footer(self, y: int, width: int) -> None:
         msg = self.state.message or ""
@@ -275,26 +286,52 @@ class App:
         if curses.has_colors():
             self.stdscr.attroff(0)
 
-    def _draw_list(self, y: int, height: int, width: int) -> None:
+    def _draw_list(  # noqa: C901
+        self,
+        y: int,
+        height: int,
+        width: int,
+    ) -> None:
         tasks = self.state.tasks
         total_rows = len(tasks) + 1  # +1 はルートタスク追加用のダミー行
         rows_to_draw = min(height, total_rows)
         for idx in range(rows_to_draw):
+            t = tasks[idx - 1]
             row_y = y + idx
             attrs = 0
-            if idx == self.state.selected_index:
-                if curses.has_colors():
-                    attrs |= curses.color_pair(2)
-                attrs |= curses.A_REVERSE
-            if attrs:
-                self.stdscr.attron(attrs)
+
+            # color on
+            if curses.has_colors():
+                # add task
+                if idx == 0:
+                    attrs |= curses.color_pair(ADD_TASK_COLOR)
+                # completed/requested
+                elif t.status in ("done", "requested"):
+                    attrs |= curses.color_pair(COMPLETED_COLOR)
+                # archived
+                elif t.is_archived:
+                    attrs |= curses.color_pair(SURPRESSED_COLOR)
+                # in_progress
+                elif t.status == "in_progress":
+                    attrs |= curses.color_pair(WORKING_COLOR)
+                # pending
+                elif t.status == "pending":
+                    attrs |= curses.color_pair(WAITING_COLOR)
+                # selected row --> fg/bg reversed
+                if idx == self.state.selected_index:
+                    attrs |= curses.A_REVERSE
+                if attrs:
+                    self.stdscr.attron(attrs)
+
+            # charactor in list line
             if idx == 0:
                 line = "[--- Add a task ---]"
                 self._safe_addnstr(row_y, 0, line.ljust(width), width)
             else:
-                t = tasks[idx - 1]
                 line = self._format_list_line(t, width)
                 self._safe_addnstr(row_y, 0, line.ljust(width), width)
+
+            # color off
             if attrs:
                 self.stdscr.attroff(attrs)
 
@@ -833,11 +870,16 @@ class App:
             f.cursor = len(f.buffer)
             return
 
-        # Backspace: delete char
+        # Backspace: delete left char
         if key in (curses.KEY_BACKSPACE, 127, 8):
             if fs.cursor > 0:
                 fs.buffer = fs.buffer[: fs.cursor - 1] + fs.buffer[fs.cursor :]
                 fs.cursor -= 1
+            return
+        # Delete: delete right char
+        if key in (curses.KEY_DC,):
+            if fs.cursor < len(fs.buffer):
+                fs.buffer = fs.buffer[: fs.cursor] + fs.buffer[fs.cursor + 1 :]
             return
 
         # 左右移動

@@ -384,12 +384,10 @@ def cmd_check(args: argparse.Namespace) -> int:  # noqa: ARG001
 
 def cmd_tui(args: argparse.Namespace) -> int:
     try:
-        tui.run(args)
+        return tui.run(args)
     except OpsError as e:
         print(f"Error: {e}")
         return 1
-    else:
-        return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

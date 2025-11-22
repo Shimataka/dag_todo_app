@@ -861,13 +861,17 @@ class App:
         ids: list[str] = []
         for s6 in s.split(sep):
             s6 = s6.strip()
-            candidates = []
-            if len(s6) == 6:
+            if len(s6) == 0:
+                continue
+            # full ID search
+            candidates = [tt.id for tt in tasks if tt.id == s6]
+            # 6-chars prefix search
+            if len(candidates) == 0 and len(s6) == 6:
                 candidates = [tt.id for tt in tasks if tt.id[:6] == s6]
-            else:
-                candidates = [tt.id for tt in tasks if tt.id == s6]
+            # match only one
             if len(candidates) == 1:
                 ids.append(candidates[0])
+            # multiple matches
             elif len(candidates) > 1:
                 self.state.msg_footer = f"Ambiguous ID: {s6} (multiple tasks. Please set full ID.)"
                 return []

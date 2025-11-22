@@ -16,7 +16,7 @@ def task_sort_key(
         start = t.start_date or now_iso()
     elif order_with_no_start == "end_of_time":
         start = "9999-12-31T23:59:59"
-    return (-t.priority, start, t.created_at, t.id)
+    return (-(t.priority or 0), start, t.created_at, t.id)
 
 
 def topo_sort(tasks: dict[str, Task]) -> list[Task]:

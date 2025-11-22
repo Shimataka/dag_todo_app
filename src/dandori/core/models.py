@@ -13,7 +13,7 @@ class Task:
     updated_at: str = field(default_factory=now_iso)
     due_date: str | None = None
     start_date: str | None = None
-    priority: int = 0
+    priority: int | None = None
     status: Literal["pending", "in_progress", "done", "requested", "removed"] = "pending"
     depends_on: list[str] = field(default_factory=list)  # 複数親OK
     children: list[str] = field(default_factory=list)  # 複数子OK

@@ -2,9 +2,10 @@ import argparse
 import curses
 import locale
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeVar
 
 from dandori.core.models import Task
 from dandori.core.ops import (
@@ -30,6 +31,8 @@ logger.addHandler(file_handler)
 
 locale.setlocale(locale.LC_ALL, "")
 
+T = TypeVar("T")
+V = TypeVar("V")
 Mode = Literal[
     "list",
     "dialog",
@@ -165,15 +168,6 @@ class App:
             topo=self.state.filter.topo,
             requested_only=self.state.filter.requested_only,
         )
-
-        # clamp selection index
-        if not self.state.tasks:
-            self.state.selected_index = 0
-        else:
-            self.state.selected_index = max(
-                0,
-                min(self.state.selected_index, len(self.state.tasks) - 1),
-            )
 
         # clamp / restore selection index
         if not self.state.tasks:
@@ -339,7 +333,10 @@ class App:
         end = min(start + height, total_rows)
 
         for i, idx in enumerate[int](range(start, end)):
-            t = tasks[idx - 1]
+            try:
+                t = tasks[idx - 1]
+            except IndexError:
+                t = Task(id="Unknown", title=f"IndexError with idx={idx - 1}")
             row_y = y + i
 
             attrs = 0
@@ -831,6 +828,22 @@ class App:
         )
         self.state.mode = "dialog"
 
+    def _parse_field(
+        self,
+        values: dict[str, str],
+        key: str,
+        parser: Callable[[str], T],
+        default: V,
+        error_template: str,
+    ) -> T | V:
+        if (value_str := values.get(key)) and value_str != "":
+            try:
+                return parser(value_str)
+            except ValueError:
+                self.state.msg_footer = f"{error_template.format(value_str)}: canceled"
+                raise
+        return default
+
     def _apply_dialog(self) -> None:  # noqa: C901
         """Apply the dialog result (add/edit)"""
         dlg = self.state.dialog
@@ -839,38 +852,53 @@ class App:
         # フィールドをdictにまとめる
         values: dict[str, str] = {f.name: f.buffer.strip() for f in dlg.fields}
         # priority (optional)
-        if (_priority := values.get("priority")) is not None and _priority != "":
-            try:
-                priority = int(_priority)
-            except ValueError:
-                self.state.msg_footer = f"Invalid priority value '{_priority}': canceled"
-                return
-        else:
-            priority = 0
+        priority = self._parse_field(
+            values,
+            "priority",
+            int,
+            0,
+            "Invalid priority value '{}'",
+        )
         # start_date (optional)
-        if (_start_date := values.get("start_date")) is not None and _start_date != "":
-            try:
-                start_date = datetime.fromisoformat(_start_date)
-            except ValueError:
-                self.state.msg_footer = f"Invalid start date value '{_start_date}': canceled"
-                return
-        else:
-            start_date = None
+        start_date = self._parse_field(
+            values,
+            "start_date",
+            datetime.fromisoformat,
+            None,
+            "Invalid start date value '{}'",
+        )
         # due_date (optional)
-        if (_due_date := values.get("due_date")) is not None and _due_date != "":
-            try:
-                due_date = datetime.fromisoformat(_due_date)
-            except ValueError:
-                self.state.msg_footer = f"Invalid due date value '{_due_date}': canceled"
-                return
-        else:
-            due_date = None
+        due_date = self._parse_field(
+            values,
+            "due_date",
+            datetime.fromisoformat,
+            None,
+            "Invalid due date value '{}'",
+        )
         # tags (optional)
-        tags = _tags.split(",") if (_tags := values.get("tags")) else None
+        tags = self._parse_field(
+            values,
+            "tags",
+            lambda s: [t.strip() for t in s.split(",")],
+            None,
+            "Invalid tags value '{}'",
+        )
         # assignee (optional)
-        assignee = values.get("assignee")
+        assignee = self._parse_field(
+            values,
+            "assignee",
+            str,
+            None,
+            "Invalid assignee value '{}'",
+        )
         # note (optional)
-        note = values.get("note")
+        note = self._parse_field(
+            values,
+            "note",
+            str,
+            None,
+            "Invalid note value '{}'",
+        )
 
         # add task
         if dlg.kind == "add":

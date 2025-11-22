@@ -142,7 +142,7 @@ def add_task(
     return t
 
 
-def update_task(  # noqa: C901
+def update_task(
     task_id: str,
     *,
     title: str | None = None,
@@ -168,48 +168,55 @@ def update_task(  # noqa: C901
         raise OpsError(_msg)
     t: Task = _task.unwrap()
 
+    # title (required)
     if title is not None:
         t.title = title
-    if description is not None:
-        t.description = description
-    if priority is not None:
-        t.priority = priority
-    if start is not None:
-        t.start_date = start.strftime("%Y-%m-%dT%H:%M:%S")
-    if due is not None:
-        t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
-    if tags is not None:
-        t.tags = tags
-    if parent_ids is not None:
-        match _unsafe_link_parents(
-            st,
-            child_id=t.id,
-            parent_ids=[parent_id for parent_id in parent_ids if parent_id not in t.depends_on],
-        ):
+    # description (optional)
+    t.description = description or ""
+    # priority (optional)
+    t.priority = priority
+    # start_date (optional)
+    t.start_date = start.strftime("%Y-%m-%dT%H:%M:%S") if start else None
+    # due_date (optional)
+    t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S") if due else None
+    # tags (optional)
+    t.tags = tags or []
+    # parent_ids (optional)
+    current_parents = set[str](t.depends_on)
+    new_parents = set[str](parent_ids or [])
+    to_add = new_parents - current_parents
+    match _unsafe_link_parents(
+        st,
+        child_id=t.id,
+        parent_ids=list[str](to_add),
+    ):
+        case Err(e):
+            st.rollback()
+            raise e
+    to_remove = current_parents - new_parents
+    for parent_id in to_remove:
+        match _unsafe_unlink_parents(st, child_id=t.id, parent_id=parent_id):
             case Err(e):
                 st.rollback()
                 raise e
-        for parent_id in t.depends_on:
-            if parent_id not in parent_ids:
-                match _unsafe_unlink_parents(st, child_id=t.id, parent_id=parent_id):
-                    case Err(e):
-                        st.rollback()
-                        raise e
-    if children_ids is not None:
-        match _unsafe_link_children(
-            st,
-            parent_id=t.id,
-            children_ids=[child_id for child_id in children_ids if child_id not in t.children],
-        ):
+    # children_ids (optional)
+    current_children = set[str](t.children)
+    new_children = set[str](children_ids or [])
+    to_add = new_children - current_children
+    match _unsafe_link_children(
+        st,
+        parent_id=t.id,
+        children_ids=list[str](to_add),
+    ):
+        case Err(e):
+            st.rollback()
+            raise e
+    to_remove = current_children - new_children
+    for child_id in to_remove:
+        match _unsafe_unlink_children(st, parent_id=t.id, child_id=child_id):
             case Err(e):
                 st.rollback()
                 raise e
-        for child_id in t.children:
-            if child_id not in children_ids:
-                match _unsafe_unlink_children(st, parent_id=t.id, child_id=child_id):
-                    case Err(e):
-                        st.rollback()
-                        raise e
 
     t.updated_at = now_iso()
     st.commit()

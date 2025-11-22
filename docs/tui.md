@@ -81,6 +81,8 @@ dandori tui
 - Due Date
 - Tags
 - Description
+- Depends on (first 6-chars or full ID, ',' separated)
+- Children (first 6-chars or full ID, ',' separated)
 
 ### ステータス変更
 

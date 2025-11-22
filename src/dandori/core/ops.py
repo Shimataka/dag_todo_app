@@ -142,7 +142,7 @@ def add_task(
     return t
 
 
-def update_task(
+def update_task(  # noqa: C901
     task_id: str,
     *,
     title: str | None = None,
@@ -172,7 +172,8 @@ def update_task(
     if title is not None:
         t.title = title
     # description (optional)
-    t.description = description or ""
+    if description is not None:
+        t.description = description
     # priority (optional)
     t.priority = priority
     # start_date (optional)
@@ -180,7 +181,8 @@ def update_task(
     # due_date (optional)
     t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S") if due else None
     # tags (optional)
-    t.tags = tags or []
+    if tags is not None:
+        t.tags = tags
     # parent_ids (optional)
     current_parents = set[str](t.depends_on)
     new_parents = set[str](parent_ids or [])

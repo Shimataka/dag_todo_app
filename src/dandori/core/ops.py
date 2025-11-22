@@ -379,7 +379,7 @@ def insert_between(
     return new_task
 
 
-# ---- 親追加ユースケース (将来の多重親対応) ---------------------------------
+# ---- 親追加ユースケース ---------------------------------
 
 
 def link_parents(child_id: str, parent_ids: list[str]) -> Task:
@@ -426,6 +426,67 @@ def remove_parent(child_id: str, parent_id: str) -> None:
     """親子関係 parent_id -> child_id を外す。
 
     循環が検出された場合や unlink 失敗時は OpsError を送出する。
+    """
+    st = _get_store()
+    st.load()
+    st.commit()
+
+    unlink_res = st.unlink_tasks(parent_id, child_id)
+    if unlink_res.is_err():
+        st.rollback()
+        raise OpsError(unlink_res.unwrap_err())
+
+    st.commit()
+    st.save()
+
+
+# ---- 子追加ユースケース ---------------------------------
+
+
+def link_children(parent_id: str, child_ids: list[str]) -> Task:
+    """既存タスク parent_id に対して、新たに子 child_ids をリンクする。
+
+    Store.link_tasks() 側で循環検出が行われる前提。
+    循環が検出された場合や link 失敗時は OpsError を送出する。
+
+    戻り値として、子追加後の parent Task を返す。
+    """
+    st = _get_store()
+    st.load()
+    st.commit()
+
+    # 存在チェック (少なくとも parent / child の存在は保証しておく) 。
+    _task = st.get_task(parent_id)
+    if _task.is_err():
+        _msg = f"Parent task not found: {parent_id}"
+        raise OpsError(_msg)
+    for child_id in child_ids:
+        _child_task = st.get_task(child_id)
+        if _child_task.is_err():
+            _msg = f"Child task not found: {child_id}"
+            raise OpsError(_msg)
+
+    for child_id in child_ids:
+        link_res = st.link_tasks(parent_id, child_id)
+        if link_res.is_err():
+            st.rollback()
+            raise OpsError(link_res.unwrap_err())
+
+    st.commit()
+    st.save()
+
+    # 最新状態の parent を返しておく (children / depends_on の反映確認用)
+    _task = st.get_task(parent_id)
+    if _task.is_err():
+        _msg = f"Parent task not found: {parent_id}"
+        raise OpsError(_msg)
+    return _task.unwrap()  # type: ignore[no-any-return]
+
+
+def remove_child(parent_id: str, child_id: str) -> None:
+    """既存タスク parent_id に対して、子 child_id を削除する。
+
+    unlink 失敗時は OpsError を送出する。
     """
     st = _get_store()
     st.load()

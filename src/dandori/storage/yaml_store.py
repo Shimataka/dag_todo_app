@@ -152,6 +152,7 @@ class StoreToYAML(Store):
         """タスク間の依存関係を追加する（parent -> child）。
 
         循環が検出された場合はエラーを返します。
+        parent_id から child_id への依存関係がすでに存在する場合は変更せず `Ok(None)` を返します。
 
         Args:
             parent_id: 親タスクのID
@@ -174,12 +175,11 @@ class StoreToYAML(Store):
                 return Err[None, str]("Unexpected error")
         match (self.get_task(parent_id), self.get_task(child_id)):
             case (Ok(p), Ok(c)):
-                if child_id not in p.children:
+                if child_id not in p.children and parent_id not in c.depends_on:
                     p.children.append(child_id)
-                if parent_id not in c.depends_on:
                     c.depends_on.append(parent_id)
-                p.updated_at = now_iso()
-                c.updated_at = now_iso()
+                    p.updated_at = now_iso()
+                    c.updated_at = now_iso()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
                 return Err[None, str](e)
@@ -188,6 +188,8 @@ class StoreToYAML(Store):
 
     def unlink_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を削除する。
+
+        parent_id から child_id への依存関係がすでに存在しない場合は変更せず `Ok(None)` を返します。
 
         Args:
             parent_id: 親タスクのID
@@ -199,12 +201,11 @@ class StoreToYAML(Store):
         """
         match (self.get_task(parent_id), self.get_task(child_id)):
             case (Ok(p), Ok(c)):
-                if child_id in p.children:
+                if child_id in p.children and parent_id in c.depends_on:
                     p.children.remove(child_id)
-                if parent_id in c.depends_on:
                     c.depends_on.remove(parent_id)
-                p.updated_at = now_iso()
-                c.updated_at = now_iso()
+                    p.updated_at = now_iso()
+                    c.updated_at = now_iso()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
                 return Err[None, str](e)

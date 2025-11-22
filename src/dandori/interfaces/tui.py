@@ -752,39 +752,51 @@ class App:
         fields = [
             FieldState(
                 name="title",
-                label="Title                   ",
+                label="Title                      ",
                 buffer=task.title,
                 cursor=len(task.title),
             ),
             FieldState(
                 name="priority",
-                label="Priority (0-9)          ",
+                label="Priority (0-9)             ",
                 buffer=str(task.priority),
                 cursor=len(str(task.priority)),
             ),
             FieldState(
                 name="start_date",
-                label="Start Date (ISO format) ",
+                label="Start Date (ISO format)    ",
                 buffer=task.start_date or "",
                 cursor=len(task.start_date or ""),
             ),
             FieldState(
                 name="due_date",
-                label="Due Date (ISO format)   ",
+                label="Due Date (ISO format)      ",
                 buffer=task.due_date or "",
                 cursor=len(task.due_date or ""),
             ),
             FieldState(
                 name="tags",
-                label="Tags (',' separated)    ",
+                label="Tags (',' separated)       ",
                 buffer=", ".join(task.tags),
                 cursor=len(", ".join(task.tags)),
             ),
             FieldState(
                 name="description",
-                label="Description             ",
+                label="Description                ",
                 buffer=task.description,
                 cursor=len(task.description),
+            ),
+            FieldState(
+                name="depends_on",
+                label="Depends on (6-chars, ',')  ",
+                buffer=", ".join([t[:6] for t in task.depends_on]),
+                cursor=len(", ".join([t[:6] for t in task.depends_on])),
+            ),
+            FieldState(
+                name="children",
+                label="Children (6-chars, ',')    ",
+                buffer=", ".join([t[:6] for t in task.children]),
+                cursor=len(", ".join([t[:6] for t in task.children])),
             ),
         ]
         self.state.dialog = DialogState(
@@ -844,6 +856,30 @@ class App:
                 raise
         return default
 
+    def _parse_ids(self, s: str, *, sep: str = ",") -> list[str]:
+        tasks = self.state.tasks
+        ids: list[str] = []
+        for s6 in s.split(sep):
+            s6 = s6.strip()
+            if len(s6) == 0:
+                continue
+            # full ID search
+            candidates = [tt.id for tt in tasks if tt.id == s6]
+            # 6-chars prefix search
+            if len(candidates) == 0 and len(s6) == 6:
+                candidates = [tt.id for tt in tasks if tt.id[:6] == s6]
+            # match only one
+            if len(candidates) == 1:
+                ids.append(candidates[0])
+            # multiple matches
+            elif len(candidates) > 1:
+                self.state.msg_footer = f"Ambiguous ID: {s6} (multiple tasks. Please set full ID.)"
+                return []
+            else:
+                self.state.msg_footer = f"Unknown ID: {s6} (please set correct ID.)"
+                return []
+        return ids
+
     def _apply_dialog(self) -> None:  # noqa: C901
         """Apply the dialog result (add/edit)"""
         dlg = self.state.dialog
@@ -856,7 +892,7 @@ class App:
             values,
             "priority",
             int,
-            0,
+            None,
             "Invalid priority value '{}'",
         )
         # start_date (optional)
@@ -898,6 +934,23 @@ class App:
             str,
             None,
             "Invalid note value '{}'",
+        )
+
+        # depends_on (optional)
+        depends_on = self._parse_field(
+            values,
+            "depends_on",
+            lambda s: self._parse_ids(s, sep=","),
+            None,
+            "Invalid depends_on value '{}'",
+        )
+        # children (optional)
+        children = self._parse_field(
+            values,
+            "children",
+            lambda s: self._parse_ids(s, sep=","),
+            None,
+            "Invalid children value '{}'",
         )
 
         # add task
@@ -946,6 +999,8 @@ class App:
                     start=start_date,
                     due=due_date,
                     tags=tags,
+                    parent_ids=depends_on,
+                    children_ids=children,
                 )
             except OpsError as e:
                 self.state.msg_footer = f"Error (edit): {e}"

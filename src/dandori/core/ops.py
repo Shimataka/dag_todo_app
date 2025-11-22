@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pyresults import Err, Ok
+from pyresults import Err, Ok, Result
 
 from dandori.core.models import Task
 from dandori.core.sort import task_sort_key, topo_sort
@@ -142,7 +142,7 @@ def add_task(
     return t
 
 
-def update_task(
+def update_task(  # noqa: C901
     task_id: str,
     *,
     title: str | None = None,
@@ -151,6 +151,8 @@ def update_task(
     start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
+    parent_ids: list[str] | None = None,
+    children_ids: list[str] | None = None,
 ) -> Task:
     """タスクの基本フィールドを更新するユースケース。
 
@@ -178,6 +180,36 @@ def update_task(
         t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
     if tags is not None:
         t.tags = tags
+    if parent_ids is not None:
+        match _unsafe_link_parents(
+            st,
+            child_id=t.id,
+            parent_ids=[parent_id for parent_id in parent_ids if parent_id not in t.depends_on],
+        ):
+            case Err(e):
+                st.rollback()
+                raise e
+        for parent_id in t.depends_on:
+            if parent_id not in parent_ids:
+                match _unsafe_unlink_parents(st, child_id=t.id, parent_id=parent_id):
+                    case Err(e):
+                        st.rollback()
+                        raise e
+    if children_ids is not None:
+        match _unsafe_link_children(
+            st,
+            parent_id=t.id,
+            children_ids=[child_id for child_id in children_ids if child_id not in t.children],
+        ):
+            case Err(e):
+                st.rollback()
+                raise e
+        for child_id in t.children:
+            if child_id not in children_ids:
+                match _unsafe_unlink_children(st, parent_id=t.id, child_id=child_id):
+                    case Err(e):
+                        st.rollback()
+                        raise e
 
     t.updated_at = now_iso()
     st.commit()
@@ -382,6 +414,43 @@ def insert_between(
 # ---- 親追加ユースケース ---------------------------------
 
 
+def _unsafe_link_parents(
+    store: Store,
+    *,
+    child_id: str,
+    parent_ids: list[str],
+) -> Result[None, OpsError]:
+    # 存在チェック (少なくとも child / parent の存在は保証しておく) 。
+    match store.get_task(child_id):
+        case Err(e):
+            return Err[None, OpsError](OpsError(e))
+    for parent_id in parent_ids:
+        match store.get_task(parent_id):
+            case Err(e):
+                return Err[None, OpsError](OpsError(e))
+
+    for parent_id in parent_ids:
+        match store.link_tasks(parent_id, child_id):
+            case Err(e):
+                store.rollback()
+                return Err[None, OpsError](OpsError(e))
+
+    return Ok[None, OpsError](None)
+
+
+def _unsafe_unlink_parents(
+    store: Store,
+    *,
+    child_id: str,
+    parent_id: str,
+) -> Result[None, OpsError]:
+    match store.unlink_tasks(parent_id, child_id):
+        case Err(e):
+            store.rollback()
+            return Err[None, OpsError](OpsError(e))
+    return Ok[None, OpsError](None)
+
+
 def link_parents(child_id: str, parent_ids: list[str]) -> Task:
     """既存タスク child_id に対して、新たに親 parent_ids をリンクする。
 
@@ -394,22 +463,10 @@ def link_parents(child_id: str, parent_ids: list[str]) -> Task:
     st.load()
     st.commit()
 
-    # 存在チェック (少なくとも child / parent の存在は保証しておく) 。
-    _task = st.get_task(child_id)
-    if _task.is_err():
-        _msg = f"Child task not found: {child_id}"
-        raise OpsError(_msg)
-    for parent_id in parent_ids:
-        _parent_task = st.get_task(parent_id)
-        if _parent_task.is_err():
-            _msg = f"Parent task not found: {parent_id}"
-            raise OpsError(_msg)
-
-    for parent_id in parent_ids:
-        link_res = st.link_tasks(parent_id, child_id)
-        if link_res.is_err():
+    match _unsafe_link_parents(st, child_id=child_id, parent_ids=parent_ids):
+        case Err(e):
             st.rollback()
-            raise OpsError(link_res.unwrap_err())
+            raise e
 
     st.commit()
     st.save()
@@ -431,10 +488,10 @@ def remove_parent(child_id: str, parent_id: str) -> None:
     st.load()
     st.commit()
 
-    unlink_res = st.unlink_tasks(parent_id, child_id)
-    if unlink_res.is_err():
-        st.rollback()
-        raise OpsError(unlink_res.unwrap_err())
+    match _unsafe_unlink_parents(st, child_id=child_id, parent_id=parent_id):
+        case Err(e):
+            st.rollback()
+            raise e
 
     st.commit()
     st.save()
@@ -443,7 +500,44 @@ def remove_parent(child_id: str, parent_id: str) -> None:
 # ---- 子追加ユースケース ---------------------------------
 
 
-def link_children(parent_id: str, child_ids: list[str]) -> Task:
+def _unsafe_link_children(
+    store: Store,
+    *,
+    parent_id: str,
+    children_ids: list[str],
+) -> Result[None, OpsError]:
+    # 存在チェック (少なくとも parent / child の存在は保証しておく) 。
+    match store.get_task(parent_id):
+        case Err(e):
+            return Err[None, OpsError](OpsError(e))
+    for child_id in children_ids:
+        match store.get_task(child_id):
+            case Err(e):
+                return Err[None, OpsError](OpsError(e))
+
+    for child_id in children_ids:
+        match store.link_tasks(parent_id, child_id):
+            case Err(e):
+                store.rollback()
+                return Err[None, OpsError](OpsError(e))
+
+    return Ok[None, OpsError](None)
+
+
+def _unsafe_unlink_children(
+    store: Store,
+    *,
+    parent_id: str,
+    child_id: str,
+) -> Result[None, OpsError]:
+    match store.unlink_tasks(parent_id, child_id):
+        case Err(e):
+            store.rollback()
+            return Err[None, OpsError](OpsError(e))
+    return Ok[None, OpsError](None)
+
+
+def link_children(parent_id: str, children_ids: list[str]) -> Task:
     """既存タスク parent_id に対して、新たに子 child_ids をリンクする。
 
     Store.link_tasks() 側で循環検出が行われる前提。
@@ -455,22 +549,10 @@ def link_children(parent_id: str, child_ids: list[str]) -> Task:
     st.load()
     st.commit()
 
-    # 存在チェック (少なくとも parent / child の存在は保証しておく) 。
-    _task = st.get_task(parent_id)
-    if _task.is_err():
-        _msg = f"Parent task not found: {parent_id}"
-        raise OpsError(_msg)
-    for child_id in child_ids:
-        _child_task = st.get_task(child_id)
-        if _child_task.is_err():
-            _msg = f"Child task not found: {child_id}"
-            raise OpsError(_msg)
-
-    for child_id in child_ids:
-        link_res = st.link_tasks(parent_id, child_id)
-        if link_res.is_err():
+    match _unsafe_link_children(st, parent_id=parent_id, children_ids=children_ids):
+        case Err(e):
             st.rollback()
-            raise OpsError(link_res.unwrap_err())
+            raise e
 
     st.commit()
     st.save()
@@ -492,10 +574,10 @@ def remove_child(parent_id: str, child_id: str) -> None:
     st.load()
     st.commit()
 
-    unlink_res = st.unlink_tasks(parent_id, child_id)
-    if unlink_res.is_err():
-        st.rollback()
-        raise OpsError(unlink_res.unwrap_err())
+    match _unsafe_unlink_children(st, parent_id=parent_id, child_id=child_id):
+        case Err(e):
+            st.rollback()
+            raise e
 
     st.commit()
     st.save()

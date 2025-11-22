@@ -411,11 +411,11 @@ class TestOps(unittest.TestCase):
         parent = ops.add_task([], "親")
         with pytest.raises(ops.OpsError) as exec_info:
             ops.link_parents("nonexistent", [parent.id])
-        assert "Child task not found" in str(exec_info.value)
+        assert "Task not found: nonexistent" in str(exec_info.value)
 
         with pytest.raises(ops.OpsError) as exec_info:
             ops.link_parents(parent.id, ["nonexistent"])
-        assert "Parent task not found" in str(exec_info.value)
+        assert "Task not found: nonexistent" in str(exec_info.value)
 
     def test_link_children(self) -> None:
         """既存タスクに子を追加できることを確認"""
@@ -436,11 +436,11 @@ class TestOps(unittest.TestCase):
         parent = ops.add_task([], "親")
         with pytest.raises(ops.OpsError) as exec_info:
             ops.link_children("nonexistent", [parent.id])
-        assert "Parent task not found" in str(exec_info.value)
+        assert "Task not found: nonexistent" in str(exec_info.value)
 
         with pytest.raises(ops.OpsError) as exec_info:
             ops.link_children(parent.id, ["nonexistent"])
-        assert "Child task not found" in str(exec_info.value)
+        assert "Task not found: nonexistent" in str(exec_info.value)
 
     def test_remove_parent(self) -> None:
         """親子関係を削除できることを確認"""

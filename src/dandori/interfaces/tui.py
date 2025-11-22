@@ -888,7 +888,7 @@ class App:
             values,
             "priority",
             int,
-            0,
+            None,
             "Invalid priority value '{}'",
         )
         # start_date (optional)

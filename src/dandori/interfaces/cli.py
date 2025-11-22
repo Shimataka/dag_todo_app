@@ -2,7 +2,7 @@
 
 import argparse
 import sys
-from datetime import date, datetime
+from datetime import datetime
 
 from dandori.core.ops import (
     OpsError,
@@ -19,6 +19,7 @@ from dandori.core.ops import (
     update_task,
 )
 from dandori.core.validate import detect_cycles, detect_inconsistencies
+from dandori.interfaces import tui
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
@@ -28,13 +29,6 @@ from dandori.util.time import format_requested_sla
 
 def get_store() -> Store:
     return StoreToYAML()
-
-
-def _parse_date(s: str | None) -> date | None:
-    """文字列を date に変換する。"""
-    if s is None:
-        return None
-    return datetime.fromisoformat(s).date()
 
 
 def _parse_datetime(s: str | None) -> datetime | None:
@@ -53,7 +47,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             title=args.title,
             description=args.description or "",
             priority=args.priority,
-            start=_parse_date(args.start),
+            start=_parse_datetime(args.start),
             due=_parse_datetime(args.due),
             tags=args.tags,
             overwrite_id_by=args.id,
@@ -143,7 +137,7 @@ def cmd_update(args: argparse.Namespace) -> int:
                 title=args.title,
                 description=args.description,
                 priority=args.priority,
-                start=_parse_date(args.start),
+                start=_parse_datetime(args.start),
                 due=_parse_datetime(args.due),
                 tags=args.tags,
             )
@@ -388,6 +382,14 @@ def cmd_check(args: argparse.Namespace) -> int:  # noqa: ARG001
     return 0
 
 
+def cmd_tui(args: argparse.Namespace) -> int:
+    try:
+        return tui.run(args)
+    except OpsError as e:
+        print(f"Error: {e}")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -499,6 +501,10 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     sp = sub.add_parser("check", help="check DAG for cycles and inconsistencies")
     sp.set_defaults(func=cmd_check)
+
+    # tui
+    sp = sub.add_parser("tui", help="run TUI")
+    sp.set_defaults(func=cmd_tui)
 
     return p
 

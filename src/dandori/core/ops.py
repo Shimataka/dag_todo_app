@@ -12,7 +12,7 @@ from dandori.util.ids import gen_task_id
 from dandori.util.time import now_iso
 
 if TYPE_CHECKING:
-    from datetime import date, datetime
+    from datetime import datetime
 
 
 Status = Literal["pending", "in_progress", "done", "requested", "removed"]
@@ -95,7 +95,7 @@ def add_task(
     overwrite_id_by: str | None = None,
     description: str = "",
     priority: int | None = None,
-    start: date | None = None,
+    start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
 ) -> Task:
@@ -117,7 +117,7 @@ def add_task(
         title=title,
         description=description or "",
         priority=priority or 0,
-        start_date=start.isoformat() if start else None,
+        start_date=start.strftime("%Y-%m-%dT%H:%M:%S") if start else None,
         due_date=due.strftime("%Y-%m-%dT%H:%M:%S") if due else None,
         tags=tags or [],
         metadata={},
@@ -148,7 +148,7 @@ def update_task(
     title: str | None = None,
     description: str | None = None,
     priority: int | None = None,
-    start: date | None = None,
+    start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
 ) -> Task:
@@ -173,7 +173,7 @@ def update_task(
     if priority is not None:
         t.priority = priority
     if start is not None:
-        t.start_date = start.isoformat()
+        t.start_date = start.strftime("%Y-%m-%dT%H:%M:%S")
     if due is not None:
         t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
     if tags is not None:

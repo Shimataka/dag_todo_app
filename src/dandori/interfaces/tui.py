@@ -68,11 +68,6 @@ def _string_width(s: str) -> int:
     return sum(map(_char_width, s))
 
 
-HEADER_TITLE = "dandori TUI  [↑/↓, (q)uit, "
-HEADER_TITLE += "(f)ilter, (a)rchived, (r)equested, (t)opo, "
-HEADER_TITLE += "(p)end, (i)n_progress, (d)one, (x)archive, (u)narchive, "
-HEADER_TITLE += "(A)dd, (E)dit, (R)equest, (G)raph]"
-
 STATUS_MARK_MAP = {
     "pending": "-",
     "in_progress": "I",
@@ -83,7 +78,7 @@ STATUS_MARK_MAP = {
 }
 
 MAIN_THEME_COLOR = 1
-ADD_TASK_COLOR = 2
+ADD_TASK_COLOR = 4
 SELECTED_ROW_COLOR = 3
 SURPRESSED_COLOR = 4
 COMPLETED_COLOR = 5
@@ -92,6 +87,51 @@ WORKING_COLOR = 6
 WAITING_COLOR = 7
 DIALOG_BG_COLOR = 8
 OVERLAY_BG_COLOR = 9
+
+
+class HeaderLines:
+    """Header lines for the TUI."""
+
+    @classmethod
+    def height(cls) -> int:
+        return 3
+
+    @classmethod
+    def title(cls) -> str:
+        return "--- dandori (TUI) > Topological graph TODO task manager ---"
+
+    @classmethod
+    def status(
+        cls,
+        status_label: str,
+        archived_label: str,
+        topo_label: str,
+        req_label: str,
+    ) -> str:
+        return cls._status_line(status_label, archived_label, topo_label, req_label)
+
+    @classmethod
+    def help(cls) -> str:
+        return cls._help_line()
+
+    @classmethod
+    def _status_line(
+        cls,
+        status_label: str,
+        archived_label: str,
+        topo_label: str,
+        req_label: str,
+    ) -> str:
+        status_line = "List: [↑/↓ Move] "
+        status_line += f"[(f/F)ilter: {status_label}] [(a)rchived: {archived_label}] "
+        status_line += f"[(t)opo: {topo_label}] [(r)equested: {req_label}]"
+        return status_line
+
+    @classmethod
+    def _help_line(cls) -> str:
+        help_line = "Task: [(A)dd] [(E)dit] [(R)equest] [(G)raph] "
+        help_line += "[(p)end] [(i)n_progress] [(d)one] [(x)Archive] [u Unarchive] [q Quit]"
+        return help_line
 
 
 @dataclass
@@ -266,7 +306,7 @@ class App:
             self.stdscr.refresh()
             return
 
-        header_height = 1
+        header_height = HeaderLines.height()
         footer_height = 1
         content_height = max_y - header_height - footer_height
         if content_height <= 0 or max_x <= 0:
@@ -324,11 +364,15 @@ class App:
         topo_label = "on" if f.topo else "off"
 
         # ヘッダータイトルを作成
-        title = HEADER_TITLE
-        title += f" [sta={status_label}, arc={archived_label}, req={req_label}, topo={topo_label}]"
+        title = HeaderLines.title()
+        status = HeaderLines.status(status_label, archived_label, topo_label, req_label)
+        helps = HeaderLines.help()
+
         if curses.has_colors():
             self.stdscr.attron(curses.color_pair(MAIN_THEME_COLOR))
         self._safe_addnstr(y, 0, title.ljust(width), width)
+        self._safe_addnstr(y + 1, 0, status.ljust(width), width)
+        self._safe_addnstr(y + 2, 0, helps.ljust(width), width)
         if curses.has_colors():
             self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
 
@@ -535,7 +579,7 @@ class App:
             return
 
         max_y, max_x = self.stdscr.getmaxyx()
-        header_height = 1
+        header_height = HeaderLines.height()
         footer_height = 1
         content_height = max_y - header_height - footer_height
         if content_height <= 0 or max_x <= 0:
@@ -1217,7 +1261,7 @@ class App:
 
     # ---- filter helpers -------------------------------------------------
 
-    def _cycle_status_filter(self) -> None:
+    def _cycle_status_filter(self, *, reverse: bool = False) -> None:
         """Cycle status filter: all -> pending -> in_prog -> done -> requested -> all."""
         order: list[str | None] = [None, "pending", "in_progress", "done", "requested"]
         current = self.state.filter.status
@@ -1225,7 +1269,7 @@ class App:
             idx = order.index(current)
         except ValueError:
             idx = 0
-        idx = (idx + 1) % len(order)
+        idx = (idx + 1) % len(order) if not reverse else (idx - 1) % len(order)
         self.state.filter.status = order[idx]
 
         label_map = {
@@ -1319,6 +1363,9 @@ class App:
         elif key in (ord("f"),):
             # status filter cycle
             self._cycle_status_filter()
+        elif key in (ord("F"),):
+            # status filter cycle
+            self._cycle_status_filter(reverse=True)
         elif key in (ord("a"),):
             # archived filter cycle
             self._cycle_archived_filter()

@@ -1,7 +1,6 @@
 import argparse
 import curses
 import locale
-import logging
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,14 +20,10 @@ from dandori.core.ops import (
     unarchive_tree,
     update_task,
 )
+from dandori.util.ids import parse_ids_with_msg
+from dandori.util.logger import setup_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-file_handler = logging.FileHandler("tui.log")
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+logger = setup_logger(__name__, is_stream=True, is_file=True)
 
 locale.setlocale(locale.LC_ALL, "")
 
@@ -1042,30 +1037,6 @@ class App:
                 raise
         return default
 
-    def _parse_ids(self, s: str, *, sep: str = ",") -> list[str]:
-        tasks = self.state.tasks
-        ids: list[str] = []
-        for s6 in s.split(sep):
-            s6 = s6.strip()
-            if len(s6) == 0:
-                continue
-            # full ID search
-            candidates = [tt.id for tt in tasks if tt.id == s6]
-            # 6-chars prefix search
-            if len(candidates) == 0 and len(s6) == 6:
-                candidates = [tt.id for tt in tasks if tt.id[:6] == s6]
-            # match only one
-            if len(candidates) == 1:
-                ids.append(candidates[0])
-            # multiple matches
-            elif len(candidates) > 1:
-                self.state.msg_footer = f"Ambiguous ID: {s6} (multiple tasks. Please set full ID.)"
-                return []
-            else:
-                self.state.msg_footer = f"Unknown ID: {s6} (please set correct ID.)"
-                return []
-        return ids
-
     def _apply_dialog(self) -> None:  # noqa: C901
         """Apply the dialog result (add/edit)"""
         dlg = self.state.dialog
@@ -1073,71 +1044,83 @@ class App:
             return
         # フィールドをdictにまとめる
         values: dict[str, str] = {f.name: f.buffer.strip() for f in dlg.fields}
-        # priority (optional)
-        priority = self._parse_field(
-            values,
-            "priority",
-            int,
-            None,
-            "Invalid priority value '{}'",
-        )
-        # start_date (optional)
-        start_date = self._parse_field(
-            values,
-            "start_date",
-            datetime.fromisoformat,
-            None,
-            "Invalid start date value '{}'",
-        )
-        # due_date (optional)
-        due_date = self._parse_field(
-            values,
-            "due_date",
-            datetime.fromisoformat,
-            None,
-            "Invalid due date value '{}'",
-        )
-        # tags (optional)
-        tags = self._parse_field(
-            values,
-            "tags",
-            lambda s: [t.strip() for t in s.split(",")],
-            None,
-            "Invalid tags value '{}'",
-        )
-        # assignee (optional)
-        assignee = self._parse_field(
-            values,
-            "assignee",
-            str,
-            None,
-            "Invalid assignee value '{}'",
-        )
-        # note (optional)
-        note = self._parse_field(
-            values,
-            "note",
-            str,
-            None,
-            "Invalid note value '{}'",
-        )
+        try:
+            # priority (optional)
+            priority = self._parse_field(
+                values,
+                "priority",
+                int,
+                None,
+                "Invalid priority value '{}'",
+            )
+            # start_date (optional)
+            start_date = self._parse_field(
+                values,
+                "start_date",
+                datetime.fromisoformat,
+                None,
+                "Invalid start date value '{}'",
+            )
+            # due_date (optional)
+            due_date = self._parse_field(
+                values,
+                "due_date",
+                datetime.fromisoformat,
+                None,
+                "Invalid due date value '{}'",
+            )
+            # tags (optional)
+            tags = self._parse_field(
+                values,
+                "tags",
+                lambda s: [t.strip() for t in s.split(",")],
+                None,
+                "Invalid tags value '{}'",
+            )
+            # assignee (optional)
+            assignee = self._parse_field(
+                values,
+                "assignee",
+                str,
+                None,
+                "Invalid assignee value '{}'",
+            )
+            # note (optional)
+            note = self._parse_field(
+                values,
+                "note",
+                str,
+                None,
+                "Invalid note value '{}'",
+            )
 
-        # depends_on (optional)
-        depends_on = self._parse_field(
-            values,
-            "depends_on",
-            lambda s: self._parse_ids(s, sep=","),
-            None,
-            "Invalid depends_on value '{}'",
-        )
-        # children (optional)
-        children = self._parse_field(
-            values,
-            "children",
-            lambda s: self._parse_ids(s, sep=","),
-            None,
-            "Invalid children value '{}'",
-        )
+            # depends_on (optional)
+            depends_on = self._parse_field(
+                values,
+                "depends_on",
+                lambda s: parse_ids_with_msg(
+                    s,
+                    source_ids=[t.id for t in self.state.tasks],
+                    msg_buffer=self.state.msg_footer,
+                ),
+                None,
+                "Invalid depends_on value '{}'",
+            )
+            # children (optional)
+            children = self._parse_field(
+                values,
+                "children",
+                lambda s: parse_ids_with_msg(
+                    s,
+                    source_ids=[t.id for t in self.state.tasks],
+                    msg_buffer=self.state.msg_footer,
+                ),
+                None,
+                "Invalid children value '{}'",
+            )
+        except Exception as err:  # noqa: BLE001
+            self.state.msg_footer = f"Error (apply_dialog): {err}"
+            return
 
         # add task
         if dlg.kind == "add":

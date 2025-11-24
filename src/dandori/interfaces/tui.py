@@ -2,6 +2,7 @@ import argparse
 import curses
 import locale
 import logging
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -43,6 +44,29 @@ DialogKind = Literal[
     "edit",
     "request",
 ]
+
+
+def _char_width(ch: str) -> int:
+    """Calculate the width of a character in the terminal."""
+    if len(ch) == 0:
+        return 0
+    # 制御文字
+    if ch < " ":
+        return 0
+    # 結合文字 (濁点など)
+    if unicodedata.combining(ch):
+        return 0
+    # 東アジア文字幅プロパティ
+    # F: full-width, W: wide, A: ambiguous を2倍にして返す
+    if unicodedata.east_asian_width(ch) in ("F", "W", "A"):
+        return 2
+    return 1
+
+
+def _string_width(s: str) -> int:
+    """Calculate the width of a string in the terminal."""
+    return sum(map(_char_width, s))
+
 
 HEADER_TITLE = "dandori TUI  [↑/↓, (q)uit, "
 HEADER_TITLE += "(f)ilter, (a)rchived, (r)equested, (t)opo, "
@@ -138,6 +162,10 @@ class App:
         self.state = AppState()
         self._init_curses()
         self._reload_tasks()
+
+    # ---- cursor management ---------------------------------------------
+    def _cursor_off(self) -> None:
+        curses.curs_set(0)
 
     def _init_curses(self) -> None:
         # 色やキーパッドの設定で、画面サイズ対応もあればここ。
@@ -255,6 +283,13 @@ class App:
 
         if self.state.mode == "dialog" and self.state.dialog is not None:
             self._draw_dialog(header_height, content_height, max_x)
+        else:
+            # dialogでないならカーソルを隠す
+            try:
+                self._cursor_off()
+            except curses.error:
+                logger.exception("Error (cursor off)")
+                self.state.msg_footer = "Error (cursor off)"
         if self.state.mode == "overlay" and self.state.overlay is not None:
             self._draw_overlay(header_height, content_height, max_x)
 
@@ -568,6 +603,29 @@ class App:
         # bg color off
         if curses.has_colors() and attr:
             self.stdscr.attroff(attr)
+
+        # ---- draw text cursor ---------------------------------------------
+        # 現在のフィールドのカーソル位置に物理カーソルを移動
+        try:
+            dlg = self.state.dialog
+            if dlg is not None:
+                fs = dlg.fields[dlg.current_index]
+                # カーソル位置計算
+                cursor_row = top + 2 + dlg.current_index
+                # label + marker + space
+                label_prefix = f"> {fs.label}: " if dlg.current_index == dlg.current_index else f"  {fs.label}: "
+                # 入力欄の左端 = left + len(label_prefix)
+                cursor_col = left + _string_width(label_prefix)
+                # buffer内のカーソル位置
+                cursor_col += _string_width(fs.buffer[: fs.cursor])
+                # 物理カーソル表示
+                curses.curs_set(1)
+                self.stdscr.move(cursor_row, cursor_col)
+        except curses.error as e:
+            # ターミナルによってはカーソル制御に失敗するかも
+            _msg = f"Error (draw text cursor): {e}"
+            logger.exception(_msg)
+            self.state.msg_footer = _msg
 
     # ---- overlay --------------------------------------------------------
 
@@ -1035,7 +1093,7 @@ class App:
             self.state.msg_footer = _msg
             return
 
-    def _handle_dialog_key(self, key: int) -> None:  # noqa: C901
+    def _handle_dialog_key(self, key: int, ch: str | None = None) -> None:  # noqa: C901
         """Handle key press while dialog is active."""
         dlg = self.state.dialog
         if dlg is None:
@@ -1101,9 +1159,19 @@ class App:
             return
 
         # 文字入力 (ASCII 32-126)
-        if 32 <= key <= 126:
-            ch = chr(key)
-            fs.buffer = fs.buffer[: fs.cursor] + ch + fs.buffer[fs.cursor :]
+        # chがstrのときはget_wch()からきた通常文字として扱う
+        insert_ch: str | None = None
+        if ch is not None:
+            insert_ch = ch
+        else:
+            # 従来互換: int だけ渡ってきた場合はASCII文字として扱う
+            if 32 <= key <= 126:
+                insert_ch = chr(key)
+
+        if insert_ch is not None and len(insert_ch) > 0:
+            if insert_ch < " ":
+                return
+            fs.buffer = fs.buffer[: fs.cursor] + insert_ch + fs.buffer[fs.cursor :]
             fs.cursor += 1
             return
 
@@ -1206,10 +1274,10 @@ class App:
         self.state.msg_footer = f"Topo={label}"
         self._reload_tasks()
 
-    def handle_key(self, key: int) -> bool:  # noqa: C901
+    def handle_key(self, key: int, ch: str | None = None) -> bool:  # noqa: C901
         # in dialog
         if self.state.mode == "dialog" and self.state.dialog is not None:
-            self._handle_dialog_key(key)
+            self._handle_dialog_key(key, ch)
             return True
 
         # in overlay
@@ -1302,8 +1370,10 @@ def main(stdscr: curses.window, args: argparse.Namespace | None = None) -> int:
     app = App(stdscr, args)
     while True:
         app.draw()
-        key = stdscr.getch()
-        cont = app.handle_key(key)
+        key_raw = stdscr.get_wch()
+        key = ord(key_raw) if isinstance(key_raw, str) else key_raw
+        ch = key_raw if isinstance(key_raw, str) else None
+        cont = app.handle_key(key, ch)
         if not cont:
             break
     return 0

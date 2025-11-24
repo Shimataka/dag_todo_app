@@ -55,12 +55,14 @@ def parse_ids(
 
 
 def parse_id_with_msg(
-    s: str,
+    s: str | None,
     *,
     source_ids: list[str],
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> str:
+    if s is None:
+        return ""
     match parse_id(s, source_ids=source_ids):
         case Ok(tid):
             return tid  # type: ignore[no-any-return]
@@ -80,13 +82,15 @@ def parse_id_with_msg(
 
 
 def parse_ids_with_msg(
-    s: str,
+    s: str | None,
     *,
     source_ids: list[str],
     sep: str = ",",
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> list[str]:
+    if s is None:
+        return []
     match parse_ids(s, source_ids=source_ids, sep=sep):
         case Ok(ids):
             return ids  # type: ignore[no-any-return]

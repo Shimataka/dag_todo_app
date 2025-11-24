@@ -133,7 +133,7 @@ class HeaderLines:
     @classmethod
     def _help_line(cls) -> str:
         help_line = "Task: [(A)dd] [(E)dit] [(R)equest] [(G)raph] "
-        help_line += "[(p)end] [(i)n_progress] [(d)one] [(x)Archive] [u Unarchive] [q Quit]"
+        help_line += "[(p)end] [(i)n_progress] [(d)one] [(x)Archive] [(u)narchive] [(q)uit]"
         return help_line
 
 
@@ -1300,7 +1300,7 @@ class App:
             if insert_ch < " ":
                 return
             fs.buffer = fs.buffer[: fs.cursor] + insert_ch + fs.buffer[fs.cursor :]
-            fs.cursor += _string_width(insert_ch)
+            fs.cursor += len(insert_ch)
             return
 
     def _set_status(self, status: str) -> None:

@@ -122,7 +122,7 @@ class HeaderLines:
         topo_label: str,
         req_label: str,
     ) -> str:
-        status_line = "List: [↑/↓ Move] "
+        status_line = "List: [↑/↓ Move, [/] Scroll] "
         status_line += f"[(f/F)ilter: {status_label}] [(a)rchived: {archived_label}] "
         status_line += f"[(t)opo: {topo_label}] [(r)equested: {req_label}]"
         return status_line
@@ -1393,9 +1393,9 @@ class App:
 
         # scroll keys
         elif key in (ord("["),):
-            self._scroll_detail(-3)
+            self._scroll_detail(-1)
         elif key in (ord("]"),):
-            self._scroll_detail(+3)
+            self._scroll_detail(+1)
 
         # dialog keys
         elif key in (ord("A"),):

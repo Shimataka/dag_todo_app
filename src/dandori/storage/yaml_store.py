@@ -80,7 +80,7 @@ class StoreToYAML(Store):
         """
         t = self.tasks.get(task_id)
         if t is None:
-            _msg = f"Task not found: {task_id} {self.tasks.keys()}"
+            _msg = f"Task not found: {task_id}"
             logger.exception(_msg)
             return Err[Task, str](_msg)
         return Ok[Task, str](t)

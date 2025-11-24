@@ -694,12 +694,8 @@ class App:
             if 0 <= cursor_row < max_y and 0 <= cursor_col < max_x2:
                 self.stdscr.move(cursor_row, cursor_col)
             else:
-                _msg = "Cursor position is out of screen: %d, %d"
-                logger.warning(
-                    _msg,
-                    cursor_row,
-                    cursor_col,
-                )
+                _msg = f"Cursor position is out of screen: {cursor_row}, {cursor_col}"
+                logger.warning(_msg)
                 self.state.msg_footer = _msg
         except curses.error as e:
             # ターミナルによってはカーソル制御に失敗するかも
@@ -825,7 +821,7 @@ class App:
         self.state.mode = "overlay"
 
     def _handle_overlay_key(self, key: int) -> None:
-        """Close overlay on any key."""
+        """Handle key press in overlay mode (scrolling and closing)."""
         ov = self.state.overlay
         # ESC: close
         if ov is None or len(ov.lines) < 1 or key in (27,):
@@ -842,7 +838,7 @@ class App:
         total_lines = len(ov.lines)
         max_box_height = content_height
         raw_height = min(total_lines + 2, max_box_height)
-        box_height = min(3, raw_height)
+        box_height = min(raw_height, max_box_height)
         lines_rows = max(1, box_height - 2)
 
         max_offset = max(0, total_lines - lines_rows)
@@ -928,7 +924,7 @@ class App:
             current_index=0,
             target_task_id=None,
         )
-        self.state.detail_offset = 0
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _start_edit_dialog(self) -> None:
@@ -1304,7 +1300,7 @@ class App:
             if insert_ch < " ":
                 return
             fs.buffer = fs.buffer[: fs.cursor] + insert_ch + fs.buffer[fs.cursor :]
-            fs.cursor += 1
+            fs.cursor += _string_width(insert_ch)
             return
 
     def _set_status(self, status: str) -> None:

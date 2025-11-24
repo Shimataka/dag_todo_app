@@ -33,11 +33,13 @@ dandori tui
 
 ## フィルタ
 
-### ステータスフィルタ (`f`)
+### ステータスフィルタ (`f (forward) / F (reverse)`)
 
 ステータスフィルタを循環切り替え：
 
 - `all` → `pending` → `in_progress` → `done` → `requested` → `all`
+
+`F` の場合は逆順に循環切り替え。
 
 ### アーカイブフィルタ (`a`)
 
@@ -129,18 +131,24 @@ dandori tui
 
 各タスク行には以下の情報が表示されます：
 
-- **ステータスマーク**: `-` (pending), `I` (in_progress), `D` (done), `R` (requested), `X` (removed), `A` (archived)
+- **ステータスマーク**:
+  - `-` (pending)
+  - `I` (in_progress)
+  - `D` (done)
+  - `R` (requested)
+  - `X` (removed)
+  - `A` (archived)
 - **タスクID**: 先頭6文字
 - **タイトル**
 
 色分け：
 
-- **オレンジ**: ダミー行（タスク追加用）
-- **緑**: 完了済み (`done`)
-- **赤**: 依頼済み (`requested`)
-- **グレー**: アーカイブ済み
-- **青**: 作業中 (`in_progress`)
-- **白**: 待機中 (`pending`)
+- **橙色**: ヘッダー行
+- **白色**: 待機中 (`pending`)
+- **赤色**: 作業中 (`in_progress`)
+- **緑色**: 完了済み (`done`)
+- **青色**: 依頼済み (`requested`)
+- **灰色**: アーカイブ済み
 
 選択中の行は反転表示されます。
 

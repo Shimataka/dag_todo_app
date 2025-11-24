@@ -119,6 +119,9 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_show(args: argparse.Namespace) -> int:
     try:
+        if args.id is None:
+            logger.exception("id is required")
+            return 1
         t = get_task(parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()]))
         print_task(t)
     except OpsError as e:
@@ -227,6 +230,9 @@ def cmd_done(args: argparse.Namespace) -> int:
 def cmd_insert(args: argparse.Namespace) -> int:
     try:
         tasks = list_tasks()
+        if args.a is None or args.b is None or args.id is None:
+            logger.exception("a, b, and id are required")
+            return 1
         a_id = parse_id_with_msg(args.a, source_ids=[t.id for t in tasks])
         b_id = parse_id_with_msg(args.b, source_ids=[t.id for t in tasks])
         args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in tasks])

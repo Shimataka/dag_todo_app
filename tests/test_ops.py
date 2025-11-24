@@ -18,22 +18,22 @@ class TestOps(unittest.TestCase):
         """各テストの前に一時ファイルを作成し、環境変数を設定"""
         self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")  # noqa: SIM115
         self.temp_file.close()
-        self.original_data_path = os.environ.get("DATA_PATH")
-        self.original_username = os.environ.get("USERNAME")
-        os.environ["DATA_PATH"] = self.temp_file.name
-        os.environ["USERNAME"] = "test_user"
+        self.original_data_path = os.environ.get("DD_DATA_PATH")
+        self.original_username = os.environ.get("DD_USERNAME")
+        os.environ["DD_DATA_PATH"] = self.temp_file.name
+        os.environ["DD_USERNAME"] = "test_user"
 
     def tearDown(self) -> None:
         """各テストの後に一時ファイルを削除し、環境変数を復元"""
         Path(self.temp_file.name).unlink(missing_ok=True)
         if self.original_data_path is not None:
-            os.environ["DATA_PATH"] = self.original_data_path
-        elif "DATA_PATH" in os.environ:
-            del os.environ["DATA_PATH"]
+            os.environ["DD_DATA_PATH"] = self.original_data_path
+        elif "DD_DATA_PATH" in os.environ:
+            del os.environ["DD_DATA_PATH"]
         if self.original_username is not None:
-            os.environ["USERNAME"] = self.original_username
-        elif "USERNAME" in os.environ:
-            del os.environ["USERNAME"]
+            os.environ["DD_USERNAME"] = self.original_username
+        elif "DD_USERNAME" in os.environ:
+            del os.environ["DD_USERNAME"]
 
     # ---- 一覧取得 / 個別取得 ----
 

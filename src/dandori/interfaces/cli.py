@@ -24,7 +24,11 @@ from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
 from dandori.util.dirs import load_env
+from dandori.util.ids import parse_id_with_msg
+from dandori.util.logger import setup_logger, setup_mode
 from dandori.util.time import format_requested_sla
+
+logger = setup_logger(__name__, is_stream=True, is_file=True)
 
 
 def get_store() -> Store:
@@ -50,7 +54,10 @@ def cmd_add(args: argparse.Namespace) -> int:
             start=_parse_datetime(args.start),
             due=_parse_datetime(args.due),
             tags=args.tags,
-            overwrite_id_by=args.id,
+            overwrite_id_by=parse_id_with_msg(
+                args.id,
+                source_ids=[t.id for t in list_tasks()],
+            ),
         )
 
         # 子として追加
@@ -60,7 +67,8 @@ def cmd_add(args: argparse.Namespace) -> int:
 
         print(t.id)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while adding a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -102,7 +110,8 @@ def cmd_list(args: argparse.Namespace) -> int:
             print(f"{tag} {t.id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
 
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while listing tasks: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -110,10 +119,14 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_show(args: argparse.Namespace) -> int:
     try:
-        t = get_task(args.id)
+        if args.id is None:
+            logger.exception("id is required")
+            return 1
+        t = get_task(parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()]))
         print_task(t)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while showing a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -121,6 +134,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_update(args: argparse.Namespace) -> int:
     try:
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
         # 基本フィールドの更新
         if any(
             [
@@ -133,7 +147,7 @@ def cmd_update(args: argparse.Namespace) -> int:
             ],
         ):
             _ = update_task(
-                args.id,
+                args_id,
                 title=args.title,
                 description=args.description,
                 priority=args.priority,
@@ -144,7 +158,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 
         # status の更新
         if args.status is not None:
-            set_status(args.id, args.status)  # type: ignore[arg-type]
+            set_status(args_id, args.status)  # type: ignore[arg-type]
 
         # request 関連フィールドの更新
         if any(
@@ -156,7 +170,7 @@ def cmd_update(args: argparse.Namespace) -> int:
             ],
         ):
             _ = set_requested(
-                args.id,
+                args_id,
                 due=_parse_datetime(args.due),
                 requested_to=args.assign_to,
                 requested_by=args.requested_by,
@@ -165,22 +179,23 @@ def cmd_update(args: argparse.Namespace) -> int:
 
         # 親子リンクの追加
         if args.add_parent:
-            link_parents(args.id, args.add_parent)
+            link_parents(args_id, args.add_parent)
         if args.add_child:
             for cid in args.add_child:
-                link_parents(cid, [args.id])
+                link_parents(cid, [args_id])
 
         # 親子リンクの削除
         if args.remove_parent:
             for pid in args.remove_parent:
-                remove_parent(args.id, pid)
+                remove_parent(args_id, pid)
         if args.remove_child:
             for cid in args.remove_child:
-                remove_parent(cid, args.id)
+                remove_parent(cid, args_id)
 
-        print(f"updated: {args.id}")
+        print(f"updated: {args_id}")
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while updating a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -188,10 +203,12 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 def cmd_inprogress(args: argparse.Namespace) -> int:
     try:
-        set_status(args.id, "in_progress")
-        print(f"in_progress: {args.id}")
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        set_status(args_id, "in_progress")
+        print(f"in_progress: {args_id}")
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while marking a task as in progress: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -199,10 +216,12 @@ def cmd_inprogress(args: argparse.Namespace) -> int:
 
 def cmd_done(args: argparse.Namespace) -> int:
     try:
-        set_status(args.id, "done")
-        print(f"done: {args.id}")
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        set_status(args_id, "done")
+        print(f"done: {args_id}")
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while marking a task as done: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -210,18 +229,26 @@ def cmd_done(args: argparse.Namespace) -> int:
 
 def cmd_insert(args: argparse.Namespace) -> int:
     try:
+        tasks = list_tasks()
+        if args.a is None or args.b is None or args.id is None:
+            logger.exception("a, b, and id are required")
+            return 1
+        a_id = parse_id_with_msg(args.a, source_ids=[t.id for t in tasks])
+        b_id = parse_id_with_msg(args.b, source_ids=[t.id for t in tasks])
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in tasks])
         new_task = insert_between(
-            args.a,
-            args.b,
+            a_id,
+            b_id,
             title=args.title,
             description=args.description or "",
             priority=args.priority,
             tags=args.tags,
-            overwrite_id_by=args.id,
+            overwrite_id_by=args_id,
         )
         print(new_task.id)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while inserting a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -229,12 +256,14 @@ def cmd_insert(args: argparse.Namespace) -> int:
 
 def cmd_archive(args: argparse.Namespace) -> int:
     try:
-        ids = archive_tree(args.id)
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        ids = archive_tree(args_id)
         print("archived:")
         for i in ids:
             print(" ", i)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while archiving a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -242,12 +271,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
 def cmd_restore(args: argparse.Namespace) -> int:
     try:
-        ids = unarchive_tree(args.id)
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        ids = unarchive_tree(args_id)
         print("restored:")
         for i in ids:
             print(" ", i)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while restoring a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -255,7 +286,8 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 def cmd_deps(args: argparse.Namespace) -> int:
     try:
-        t = get_task(args.id)
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        t = get_task(args_id)
         print("depends_on:")
         for pid in t.depends_on:
             print(" ", pid)
@@ -263,7 +295,8 @@ def cmd_deps(args: argparse.Namespace) -> int:
         for cid in t.children:
             print(" ", cid)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while showing depends_on/children IDs: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -272,9 +305,11 @@ def cmd_deps(args: argparse.Namespace) -> int:
 def cmd_reason(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    _info = st.get_dependency_info(args.id)
+    args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+    _info = st.get_dependency_info(args_id)
     if _info.is_err():
-        print(f"Error: {_info.unwrap_err()}")
+        _msg = f"An error occurred while getting dependency info: {_info.unwrap_err()}"
+        logger.exception(_msg)
         return 1
     info = _info.unwrap()
     for k, v in info.items():
@@ -287,16 +322,18 @@ def cmd_reason(args: argparse.Namespace) -> int:
 def cmd_request(args: argparse.Namespace) -> int:
     try:
         env = load_env()
+        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
         set_requested(
-            args.id,
+            args_id,
             requested_to=args.assignee,
             due=None,  # CLI では due を受け取っていない
             note=args.note or "",
             requested_by=args.requester or env.get("USERNAME", "anonymous"),
         )
-        print(f"requested: {args.id} -> {args.assignee}")
+        print(f"requested: {args_id} -> {args.assignee}")
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while requesting a task: {e!s}"
+        logger.exception(_msg)
         return 1
     else:
         return 0
@@ -307,7 +344,8 @@ def cmd_export(args: argparse.Namespace) -> int:
     st.load()
     _tasks = st.get_all_tasks()
     if _tasks.is_err():
-        print(f"Error: {_tasks.unwrap_err()}")
+        _msg = f"An error occurred while exporting tasks: {_tasks.unwrap_err()}"
+        logger.exception(_msg)
         return 1
     tasks = _tasks.unwrap()
     export_json(tasks, args.path)
@@ -386,13 +424,18 @@ def cmd_tui(args: argparse.Namespace) -> int:
     try:
         return tui.run(args)
     except OpsError as e:
-        print(f"Error: {e}")
+        _msg = f"An error occurred while running TUI: {e!s}"
+        logger.exception(_msg)
         return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    # log (debug mode)
+    p.add_argument("--debug", action="store_true", help="debug mode")
+    p.set_defaults(func=lambda args: setup_mode(is_debug=args.debug))
 
     # add
     sp = sub.add_parser("add", help="add a task")

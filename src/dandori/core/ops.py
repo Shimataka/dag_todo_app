@@ -80,7 +80,7 @@ def get_task(task_id: str) -> Task:
     st.load()
     _task = st.get_task(task_id)
     if _task.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     return _task.unwrap()  # type: ignore[no-any-return]
 
@@ -164,7 +164,7 @@ def update_task(  # noqa: C901
 
     _task = st.get_task(task_id)
     if _task.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _task.unwrap()
 
@@ -240,7 +240,7 @@ def set_status(task_id: str, status: Status) -> Task:
 
     _task = st.get_task(task_id)
     if _task.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _task.unwrap()
     t.status = status
@@ -277,7 +277,7 @@ def set_requested(
 
     _task = st.get_task(task_id)
     if _task.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _task.unwrap()
 
@@ -344,7 +344,7 @@ def get_deps(task_id: str) -> list[Task]:
     st.load()
     _t = st.get_task(task_id)
     if _t.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_t.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _t.unwrap()
     _d = st.get_tasks(t.depends_on)
@@ -360,7 +360,7 @@ def get_children(task_id: str) -> list[Task]:
     st.load()
     _t = st.get_task(task_id)
     if _t.is_err():
-        _msg = f"Task not found: {task_id}"
+        _msg = f"Task not found: {_t.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _t.unwrap()
     _c = st.get_tasks(t.children)
@@ -483,7 +483,7 @@ def link_parents(child_id: str, parent_ids: list[str]) -> Task:
     # 最新状態の child を返しておく (children / depends_on の反映確認用)
     _task = st.get_task(child_id)
     if _task.is_err():
-        _msg = f"Child task not found: {child_id}"
+        _msg = f"Child task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     return _task.unwrap()  # type: ignore[no-any-return]
 
@@ -569,7 +569,7 @@ def link_children(parent_id: str, children_ids: list[str]) -> Task:
     # 最新状態の parent を返しておく (children / depends_on の反映確認用)
     _task = st.get_task(parent_id)
     if _task.is_err():
-        _msg = f"Parent task not found: {parent_id}"
+        _msg = f"Parent task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     return _task.unwrap()  # type: ignore[no-any-return]
 

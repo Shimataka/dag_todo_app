@@ -7,7 +7,10 @@ from pyresults import Err, Ok, Result
 
 from dandori.core.models import Task
 from dandori.storage.base import Store
+from dandori.util.logger import setup_logger
 from dandori.util.time import now_iso
+
+logger = setup_logger(__name__, is_stream=True, is_file=True)
 
 
 class StoreToYAML(Store):
@@ -22,7 +25,12 @@ class StoreToYAML(Store):
         _path = Path(self.data_path)
         if _path.exists():
             with _path.open(encoding="utf-8") as f:
-                raw = yaml.safe_load(f) or {}
+                try:
+                    raw = yaml.safe_load(f) or {}
+                except yaml.YAMLError as e:
+                    _msg = f"Failed to load YAML file: {e}"
+                    logger.exception(_msg)
+                    return
                 for tid, td in raw.get("tasks", {}).items():
                     self.tasks[tid] = Task.from_dict(td)
         else:
@@ -73,6 +81,7 @@ class StoreToYAML(Store):
         t = self.tasks.get(task_id)
         if t is None:
             _msg = f"Task not found: {task_id}"
+            logger.exception(_msg)
             return Err[Task, str](_msg)
         return Ok[Task, str](t)
 
@@ -115,11 +124,15 @@ class StoreToYAML(Store):
         match self.get_all_tasks():
             case Ok(tasks):
                 if task.id in tasks:
-                    return Err[None, str](f"Task already exists: {task.id}")
+                    _msg = f"Task already exists: {task.id}"
+                    logger.exception(_msg)
+                    return Err[None, str](_msg)
                 self.tasks[task.id] = task
                 return Ok[None, str](None)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def remove_task(self, task_id: str) -> Result[None, str]:
         """タスクを削除する。
@@ -144,9 +157,13 @@ class StoreToYAML(Store):
                 del self.tasks[task_id]
                 return Ok[None, str](None)
             case Err(e):
-                return Err[None, str](e)
+                _msg = f"Error (remove): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def link_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を追加する（parent -> child）。
@@ -166,13 +183,18 @@ class StoreToYAML(Store):
         match self._has_task_cycle(parent_id, child_id):
             case Ok(True):
                 _msg = f"Cycle detected: {parent_id} -> {child_id}"
+                logger.exception(_msg)
                 return Err[None, str](_msg)
             case Ok(False):
                 pass
             case Err(e):
-                return Err[None, str](e)
+                _msg = f"Error (link): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
         match (self.get_task(parent_id), self.get_task(child_id)):
             case (Ok(p), Ok(c)):
                 if child_id not in p.children and parent_id not in c.depends_on:
@@ -182,9 +204,13 @@ class StoreToYAML(Store):
                     c.updated_at = now_iso()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
-                return Err[None, str](e)
+                _msg = f"Error (unlink): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def unlink_tasks(self, parent_id: str, child_id: str) -> Result[None, str]:
         """タスク間の依存関係を削除する。
@@ -208,9 +234,13 @@ class StoreToYAML(Store):
                     c.updated_at = now_iso()
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
-                return Err[None, str](e)
+                _msg = f"Error (unlink): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     # ---- アーカイブ (弱連結成分単位) ----
 
@@ -234,9 +264,13 @@ class StoreToYAML(Store):
                     t.updated_at = now_iso()
                 return Ok[list[str], str]([t.id for t in comp])
             case Err(e):
-                return Err[list[str], str](e)
+                _msg = f"Error (archive): {e}"
+                logger.exception(_msg)
+                return Err[list[str], str](_msg)
             case _:
-                return Err[list[str], str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[list[str], str](_msg)
 
     def unarchive_tasks(self, task_id: str) -> Result[list[str], str]:
         """弱連結成分単位でアーカイブ状態を復元する。
@@ -258,9 +292,13 @@ class StoreToYAML(Store):
                     t.updated_at = now_iso()
                 return Ok[list[str], str]([t.id for t in comp])
             case Err(e):
-                return Err[list[str], str](e)
+                _msg = f"Error (unarchive): {e}"
+                logger.exception(_msg)
+                return Err[list[str], str](_msg)
             case _:
-                return Err[list[str], str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[list[str], str](_msg)
 
     def weakly_connected_component(self, start: str) -> Result[list[Task], str]:
         visited_tasks: list[Task] = []
@@ -278,9 +316,13 @@ class StoreToYAML(Store):
                     stack.extend(t.children)
                     stack.extend(t.depends_on)
                 case Err(e):
-                    return Err[list[Task], str](e)
+                    _msg = f"Error (weakly_connected_component): {e}"
+                    logger.exception(_msg)
+                    return Err[list[Task], str](_msg)
                 case _:
-                    return Err[list[Task], str]("Unexpected error")
+                    _msg = "Unexpected error"
+                    logger.exception(_msg)
+                    return Err[list[Task], str](_msg)
         return Ok[list[Task], str](visited_tasks)
 
     # ---- 依存関係情報表示 ----
@@ -303,9 +345,13 @@ class StoreToYAML(Store):
                 chil = [self.get_task(cid).map_or(lambda task: task.title, f"<{cid} not found>") for cid in t.children]
                 return Ok[dict[str, list[str]], str]({"task": [t.title], "depends_on": deps, "children": chil})
             case Err(e):
-                return Err[dict[str, list[str]], str](e)
+                _msg = f"Error (get_dependency_info): {e}"
+                logger.exception(_msg)
+                return Err[dict[str, list[str]], str](_msg)
             case _:
-                return Err[dict[str, list[str]], str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[dict[str, list[str]], str](_msg)
 
     # ---- 挿入機能 A -> (new) -> B ----
 
@@ -340,9 +386,13 @@ class StoreToYAML(Store):
             case Ok(None):
                 return Ok[None, str](None)
             case Err(e):
-                return Err[None, str](e)
+                _msg = f"Error (insert_task): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def _add_inserted_task(
         self,
@@ -361,9 +411,13 @@ class StoreToYAML(Store):
                     return self.unlink_tasks(a, b)
                 return Ok[None, str](None)
             case (Err(e), _) | (_, Err(e)):
-                return Err[None, str](e)
+                _msg = f"Error (remove_existing_edge): {e}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def _link_inserted_task(self, a: str, b: str, new_task: Task) -> Result[None, str]:
         # A->new, new->B を確実に張る
@@ -391,9 +445,13 @@ class StoreToYAML(Store):
                     ),
                 )
             case (Err(e1), Err(e2)):
-                return Err[None, str](f"Failed to link to parent: {e1}, and failed to link to child: {e2}")
+                _msg = f"Failed to link to parent: {e1}, and failed to link to child: {e2}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     def _rollback_on_error(
         self,
@@ -402,11 +460,17 @@ class StoreToYAML(Store):
     ) -> Result[None, str]:
         match rollback_fn():
             case Ok(None):
-                return Err[None, str](error_message)
+                _msg = f"Rollback failed (on {error_message})"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case Err(ee):
-                return Err[None, str](f"Rollback failed (on {error_message}):\n{ee}")
+                _msg = f"Rollback failed (on {error_message}):\n{ee}"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
             case _:
-                return Err[None, str]("Unexpected error")
+                _msg = "Unexpected error"
+                logger.exception(_msg)
+                return Err[None, str](_msg)
 
     # ---- 循環検出 ----
 
@@ -424,7 +488,11 @@ class StoreToYAML(Store):
                 case Ok(t):
                     stack.extend(t.children)
                 case Err(e):
-                    return Err[bool, str](e)
+                    _msg = f"Error (has_task_cycle): {e}"
+                    logger.exception(_msg)
+                    return Err[bool, str](_msg)
                 case _:
-                    return Err[bool, str]("Unexpected error")
+                    _msg = "Unexpected error"
+                    logger.exception(_msg)
+                    return Err[bool, str](_msg)
         return Ok[bool, str](value=False)

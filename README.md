@@ -33,6 +33,27 @@ uv sync
 pip install -e .
 ```
 
+### 環境変数を設定
+
+```bash
+export DD_HOME_DIR=~/.dandori  # デフォルトは ~/.dandori
+export DD_USERNAME=your_username  # デフォルトは anonymous
+export DD_DATA_PATH=~/.dandori/tasks.yaml  # デフォルトは $DD_HOME_DIR/tasks.yaml
+export DD_ARCHIVE_PATH=~/.dandori/archive.yaml  # デフォルトは $DD_HOME_DIR/archive.yaml
+```
+
+### 設定ファイルの作成
+
+[OS環境変数](#環境変数を設定)に上書きされるので注意
+
+```bash
+# $DD_HOME_DIR/config.env を作成
+touch $DD_HOME_DIR/config.env
+echo "DD_USERNAME=your_username" >> $DD_HOME_DIR/config.env
+echo "DD_DATA_PATH=$DD_DATA_PATH" >> $DD_HOME_DIR/config.env
+echo "DD_ARCHIVE_PATH=$DD_ARCHIVE_PATH" >> $DD_HOME_DIR/config.env
+```
+
 ## 基本的な使い方
 
 - CLI コマンドの使い方は [CLI コマンド](docs/cli.md) を参照。
@@ -44,20 +65,24 @@ pip install -e .
 
 ```text
 src/dandori/
+  api/            # API実装 (将来拡張予定)
+    server.py     # HTTPサーバ実装
   core/           # ドメインモデルとコアロジック
     models.py     # Task/Edge のデータクラス
     ops.py        # コア操作ロジック
     sort.py       # ソート処理
     validate.py   # サイクル検出・整合性チェック
-  storage/        # ストレージ層
-    base.py       # Storage インターフェース
-    yaml_store.py # YAML実装
   interfaces/     # 外部インターフェース
     cli.py        # CLI実装
+    tui.py        # TUI実装
   io/             # 入出力
     json_io.py    # JSONエクスポート/インポート
     std_io.py     # 標準出力フォーマット
+  storage/        # ストレージ層
+    base.py       # Storage インターフェース
+    yaml_store.py # YAML実装
   util/           # ユーティリティ
+    dirs.py       # ディレクトリ関連
     ids.py        # ID生成
     time.py       # 日時処理
 ```

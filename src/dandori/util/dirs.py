@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 
-DEFAULT_HOME = (Path.home() / ".dandori").as_posix()
+DEFAULT_HOME = os.environ.get("DD_HOME_DIR", (Path.home() / ".dandori").as_posix())
 DEFAULT_TASKS_PATH = (Path(DEFAULT_HOME) / "tasks.yaml").as_posix()
 DEFAULT_ARCHIVE_PATH = (Path(DEFAULT_HOME) / "archive.yaml").as_posix()
 DEFAULT_ENV_PATH = (Path(DEFAULT_HOME) / "config.env").as_posix()
@@ -31,9 +31,9 @@ def load_env(path: str = DEFAULT_ENV_PATH) -> dict[str, str]:
     # OS環境変数を上書き優先
     env.update(
         {
-            "USERNAME": os.environ.get("USERNAME") or os.environ.get("USER") or env.get("USERNAME", "anonymous"),
-            "DATA_PATH": os.environ.get("DATA_PATH", env.get("DATA_PATH", DEFAULT_TASKS_PATH)),
-            "ARCHIVE_PATH": os.environ.get("ARCHIVE_PATH", env.get("ARCHIVE_PATH", DEFAULT_ARCHIVE_PATH)),
+            "USERNAME": os.environ.get("DD_USERNAME") or env.get("USERNAME", "anonymous"),
+            "DATA_PATH": os.environ.get("DD_DATA_PATH", env.get("DATA_PATH", DEFAULT_TASKS_PATH)),
+            "ARCHIVE_PATH": os.environ.get("DD_ARCHIVE_PATH", env.get("ARCHIVE_PATH", DEFAULT_ARCHIVE_PATH)),
         },
     )
     return env

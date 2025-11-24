@@ -88,6 +88,9 @@ WAITING_COLOR = 7
 DIALOG_BG_COLOR = 8
 OVERLAY_BG_COLOR = 9
 
+MAX_DIALOG_BOX_WIDTH = 80
+MAX_OVERLAY_BOX_WIDTH = 100
+
 
 class HeaderLines:
     """Header lines for the TUI."""
@@ -189,6 +192,8 @@ class AppState:
     # scroll用
     list_offset: int = 0  # list viewのstart rowのオフセット
     detail_offset: int = 0  # detail viewのstart rowのオフセット
+    dialog_offset: int = 0  # dialog viewのstart rowのオフセット
+    overlay_offset: int = 0  # overlay viewのstart rowのオフセット
 
 
 class App:
@@ -598,7 +603,12 @@ class App:
 
     # ---- dialog ---------------------------------------------------------
 
-    def _draw_dialog(self, content_y: int, content_height: int, max_x: int) -> None:
+    def _draw_dialog(  # noqa: C901
+        self,
+        content_y: int,
+        content_height: int,
+        max_x: int,
+    ) -> None:
         """Draw simple centered one-line input dialog."""
         dlg = self.state.dialog
         if dlg is None:
@@ -607,8 +617,27 @@ class App:
         num_fields = len(dlg.fields)
         if num_fields == 0:
             return
-        box_width = min(80, max_x - 4)
-        box_height = 3 + num_fields + 1  # title + empty + fields + hint
+
+        box_width = min(MAX_DIALOG_BOX_WIDTH, max_x - 4)
+        max_box_height = content_height
+        # title(1) + empty(1) + fields(num_fields) + hint(1)
+        raw_height = 3 + num_fields
+        box_height = min(raw_height, max_box_height)
+        # フィールドを描画できる行数
+        field_rows = max(1, max_box_height - 3)
+
+        # スクロールオフセットの調整
+        offset = self.state.dialog_offset
+        max_offset = max(0, num_fields - field_rows)
+        offset = max(0, min(offset, max_offset))
+
+        # 現在のフィールドが可視範囲に入るように調整
+        if dlg.current_index < offset:
+            offset = dlg.current_index
+        elif dlg.current_index >= offset + field_rows:
+            offset = dlg.current_index - field_rows + 1
+        self.state.dialog_offset = offset
+
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
 
@@ -627,10 +656,13 @@ class App:
         self._safe_addnstr(top, left, title.ljust(box_width), box_width)
         # 空行
         self._safe_addnstr(top + 1, left, " " * box_width, box_width)
-        # フィールド群
+
+        # フィールド群 (スクロール対応)
         max_input_width = box_width - 18  # ラベル用の適用な余白
         row = top + 2
-        for idx, fs in enumerate[FieldState](dlg.fields):
+        end_index = min(offset + field_rows, num_fields)
+        for idx in range(offset, end_index):
+            fs = dlg.fields[idx]
             marker = ">" if idx == dlg.current_index else " "
             label = f"{marker} {fs.label}: "
             value = fs.buffer
@@ -644,32 +676,40 @@ class App:
         hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
         self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
 
-        # bg color off
-        if curses.has_colors() and attr:
-            self.stdscr.attroff(attr)
-
         # ---- draw text cursor ---------------------------------------------
         # 現在のフィールドのカーソル位置に物理カーソルを移動
         try:
-            dlg = self.state.dialog
-            if dlg is not None:
-                fs = dlg.fields[dlg.current_index]
-                # カーソル位置計算
-                cursor_row = top + 2 + dlg.current_index
-                # label + marker + space
-                label_prefix = f"> {fs.label}: " if dlg.current_index == dlg.current_index else f"  {fs.label}: "
-                # 入力欄の左端 = left + len(label_prefix)
-                cursor_col = left + _string_width(label_prefix)
-                # buffer内のカーソル位置
-                cursor_col += _string_width(fs.buffer[: fs.cursor])
-                # 物理カーソル表示
-                curses.curs_set(1)
+            fs = dlg.fields[dlg.current_index]
+            # カーソル位置計算
+            cursor_row = top + 2 + dlg.current_index - offset
+            # label + marker + space
+            label = f"> {fs.label}: "
+            # 入力欄の左端 = left + len(label)
+            cursor_col = left + _string_width(label)
+            # buffer内のカーソル位置
+            cursor_col += _string_width(fs.buffer[: fs.cursor])
+            # 物理カーソル表示
+            curses.curs_set(1)
+            max_y, max_x2 = self.stdscr.getmaxyx()
+            if 0 <= cursor_row < max_y and 0 <= cursor_col < max_x2:
                 self.stdscr.move(cursor_row, cursor_col)
+            else:
+                _msg = "Cursor position is out of screen: %d, %d"
+                logger.warning(
+                    _msg,
+                    cursor_row,
+                    cursor_col,
+                )
+                self.state.msg_footer = _msg
         except curses.error as e:
             # ターミナルによってはカーソル制御に失敗するかも
             _msg = f"Error (draw text cursor): {e}"
             logger.exception(_msg)
             self.state.msg_footer = _msg
+
+        # bg color off
+        if curses.has_colors() and attr:
+            self.stdscr.attroff(attr)
 
     # ---- overlay --------------------------------------------------------
 
@@ -686,10 +726,19 @@ class App:
         self.stdscr.attron(attr)
 
         # 行数で高さを決める
-        box_width = min(100, max_x - 4)
+        total_lines = len(ov.lines)
+        box_width = min(MAX_OVERLAY_BOX_WIDTH, max_x - 4)
         max_box_height = content_height
-        needed_height = min(len(ov.lines) + 2, max_box_height)
-        box_height = max(3, needed_height)
+        # title(1) + lines(total_lines) + hint(1)
+        raw_height = min(total_lines + 2, max_box_height)
+        box_height = min(raw_height, max_box_height)
+        lines_rows = max(1, max_box_height - 2)
+
+        # スクロールオフセットの調整
+        offset = self.state.overlay_offset
+        max_offset = max(0, total_lines - lines_rows)
+        offset = max(0, min(offset, max_offset))
+        self.state.overlay_offset = offset
 
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
@@ -705,7 +754,8 @@ class App:
         # 本文
         start_row = top + 1
         row = start_row
-        for line in ov.lines[: box_height - 2]:
+        end_index = min(offset + lines_rows, total_lines)
+        for line in ov.lines[offset:end_index]:
             self._safe_addnstr(row, left, line.ljust(box_width), box_width)
             row += 1
 
@@ -768,17 +818,52 @@ class App:
         lines.append("-" * 12)  # 12は"Depended by:"の長さ
 
         self.state.overlay = OverlayState(
-            title="Local DAG (deps/children)",
+            title="Local graph",
             lines=lines,
         )
+        self.state.overlay_offset = 0
         self.state.mode = "overlay"
 
     def _handle_overlay_key(self, key: int) -> None:
         """Close overlay on any key."""
-        if key in (27,):  # ESC
+        ov = self.state.overlay
+        # ESC: close
+        if ov is None or len(ov.lines) < 1 or key in (27,):
             self.state.mode = "list"
             self.state.overlay = None
+            self.state.overlay_offset = 0
             return
+
+        # 可視行数を計算
+        max_y, _ = self.stdscr.getmaxyx()
+        header_height = HeaderLines.height()
+        footer_height = 1
+        content_height = max_y - header_height - footer_height
+        total_lines = len(ov.lines)
+        max_box_height = content_height
+        raw_height = min(total_lines + 2, max_box_height)
+        box_height = min(3, raw_height)
+        lines_rows = max(1, box_height - 2)
+
+        max_offset = max(0, total_lines - lines_rows)
+        offset = self.state.overlay_offset
+
+        if key in (curses.KEY_UP,):
+            offset = max(0, offset - 1)
+        elif key in (curses.KEY_DOWN,):
+            offset = min(max_offset, offset + 1)
+        elif key in (curses.KEY_HOME,):
+            offset = 0
+        elif key in (curses.KEY_END,):
+            offset = max_offset
+        elif key in (curses.KEY_PPAGE,):
+            offset = max(0, offset - lines_rows)
+        elif key in (curses.KEY_NPAGE,):
+            offset = min(max_offset, offset + lines_rows)
+        else:
+            # ignore other keys
+            return
+        self.state.overlay_offset = offset
 
     # ---- small helpers --------------------------------------------------
 
@@ -843,6 +928,7 @@ class App:
             current_index=0,
             target_task_id=None,
         )
+        self.state.detail_offset = 0
         self.state.mode = "dialog"
 
     def _start_edit_dialog(self) -> None:
@@ -908,6 +994,7 @@ class App:
             current_index=0,
             target_task_id=task.id,
         )
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _start_request_dialog(self) -> None:
@@ -940,6 +1027,7 @@ class App:
             current_index=0,
             target_task_id=task.id,
         )
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _parse_field(

@@ -2,6 +2,7 @@ import argparse
 import curses
 import locale
 import logging
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -44,10 +45,28 @@ DialogKind = Literal[
     "request",
 ]
 
-HEADER_TITLE = "dandori TUI  [↑/↓, (q)uit, "
-HEADER_TITLE += "(f)ilter, (a)rchived, (r)equested, (t)opo, "
-HEADER_TITLE += "(p)end, (i)n_progress, (d)one, (x)archive, (u)narchive, "
-HEADER_TITLE += "(A)dd, (E)dit, (R)equest, (G)raph]"
+
+def _char_width(ch: str) -> int:
+    """Calculate the width of a character in the terminal."""
+    if len(ch) == 0:
+        return 0
+    # 制御文字
+    if ch < " ":
+        return 0
+    # 結合文字 (濁点など)
+    if unicodedata.combining(ch):
+        return 0
+    # 東アジア文字幅プロパティ
+    # F: full-width, W: wide, A: ambiguous を2倍にして返す
+    if unicodedata.east_asian_width(ch) in ("F", "W", "A"):
+        return 2
+    return 1
+
+
+def _string_width(s: str) -> int:
+    """Calculate the width of a string in the terminal."""
+    return sum(map(_char_width, s))
+
 
 STATUS_MARK_MAP = {
     "pending": "-",
@@ -59,7 +78,7 @@ STATUS_MARK_MAP = {
 }
 
 MAIN_THEME_COLOR = 1
-ADD_TASK_COLOR = 2
+ADD_TASK_COLOR = 4
 SELECTED_ROW_COLOR = 3
 SURPRESSED_COLOR = 4
 COMPLETED_COLOR = 5
@@ -68,6 +87,54 @@ WORKING_COLOR = 6
 WAITING_COLOR = 7
 DIALOG_BG_COLOR = 8
 OVERLAY_BG_COLOR = 9
+
+MAX_DIALOG_BOX_WIDTH = 80
+MAX_OVERLAY_BOX_WIDTH = 100
+
+
+class HeaderLines:
+    """Header lines for the TUI."""
+
+    @classmethod
+    def height(cls) -> int:
+        return 3
+
+    @classmethod
+    def title(cls) -> str:
+        return "--- dandori (TUI) > Topological graph TODO task manager ---"
+
+    @classmethod
+    def status(
+        cls,
+        status_label: str,
+        archived_label: str,
+        topo_label: str,
+        req_label: str,
+    ) -> str:
+        return cls._status_line(status_label, archived_label, topo_label, req_label)
+
+    @classmethod
+    def help(cls) -> str:
+        return cls._help_line()
+
+    @classmethod
+    def _status_line(
+        cls,
+        status_label: str,
+        archived_label: str,
+        topo_label: str,
+        req_label: str,
+    ) -> str:
+        status_line = "List: [↑/↓ Move, [/] Scroll] "
+        status_line += f"[(f/F)ilter: {status_label}] [(a)rchived: {archived_label}] "
+        status_line += f"[(t)opo: {topo_label}] [(r)equested: {req_label}]"
+        return status_line
+
+    @classmethod
+    def _help_line(cls) -> str:
+        help_line = "Task: [(A)dd] [(E)dit] [(R)equest] [(G)raph] "
+        help_line += "[(p)end] [(i)n_progress] [(d)one] [(x)Archive] [(u)narchive] [(q)uit]"
+        return help_line
 
 
 @dataclass
@@ -125,6 +192,8 @@ class AppState:
     # scroll用
     list_offset: int = 0  # list viewのstart rowのオフセット
     detail_offset: int = 0  # detail viewのstart rowのオフセット
+    dialog_offset: int = 0  # dialog viewのstart rowのオフセット
+    overlay_offset: int = 0  # overlay viewのstart rowのオフセット
 
 
 class App:
@@ -138,6 +207,10 @@ class App:
         self.state = AppState()
         self._init_curses()
         self._reload_tasks()
+
+    # ---- cursor management ---------------------------------------------
+    def _cursor_off(self) -> None:
+        curses.curs_set(0)
 
     def _init_curses(self) -> None:
         # 色やキーパッドの設定で、画面サイズ対応もあればここ。
@@ -238,7 +311,7 @@ class App:
             self.stdscr.refresh()
             return
 
-        header_height = 1
+        header_height = HeaderLines.height()
         footer_height = 1
         content_height = max_y - header_height - footer_height
         if content_height <= 0 or max_x <= 0:
@@ -255,6 +328,13 @@ class App:
 
         if self.state.mode == "dialog" and self.state.dialog is not None:
             self._draw_dialog(header_height, content_height, max_x)
+        else:
+            # dialogでないならカーソルを隠す
+            try:
+                self._cursor_off()
+            except curses.error:
+                logger.exception("Error (cursor off)")
+                self.state.msg_footer = "Error (cursor off)"
         if self.state.mode == "overlay" and self.state.overlay is not None:
             self._draw_overlay(header_height, content_height, max_x)
 
@@ -289,11 +369,15 @@ class App:
         topo_label = "on" if f.topo else "off"
 
         # ヘッダータイトルを作成
-        title = HEADER_TITLE
-        title += f" [sta={status_label}, arc={archived_label}, req={req_label}, topo={topo_label}]"
+        title = HeaderLines.title()
+        status = HeaderLines.status(status_label, archived_label, topo_label, req_label)
+        helps = HeaderLines.help()
+
         if curses.has_colors():
             self.stdscr.attron(curses.color_pair(MAIN_THEME_COLOR))
         self._safe_addnstr(y, 0, title.ljust(width), width)
+        self._safe_addnstr(y + 1, 0, status.ljust(width), width)
+        self._safe_addnstr(y + 2, 0, helps.ljust(width), width)
         if curses.has_colors():
             self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
 
@@ -500,7 +584,7 @@ class App:
             return
 
         max_y, max_x = self.stdscr.getmaxyx()
-        header_height = 1
+        header_height = HeaderLines.height()
         footer_height = 1
         content_height = max_y - header_height - footer_height
         if content_height <= 0 or max_x <= 0:
@@ -519,7 +603,12 @@ class App:
 
     # ---- dialog ---------------------------------------------------------
 
-    def _draw_dialog(self, content_y: int, content_height: int, max_x: int) -> None:
+    def _draw_dialog(  # noqa: C901
+        self,
+        content_y: int,
+        content_height: int,
+        max_x: int,
+    ) -> None:
         """Draw simple centered one-line input dialog."""
         dlg = self.state.dialog
         if dlg is None:
@@ -528,8 +617,27 @@ class App:
         num_fields = len(dlg.fields)
         if num_fields == 0:
             return
-        box_width = min(80, max_x - 4)
-        box_height = 3 + num_fields + 1  # title + empty + fields + hint
+
+        box_width = min(MAX_DIALOG_BOX_WIDTH, max_x - 4)
+        max_box_height = content_height
+        # title(1) + empty(1) + fields(num_fields) + hint(1)
+        raw_height = 3 + num_fields
+        box_height = min(raw_height, max_box_height)
+        # フィールドを描画できる行数
+        field_rows = max(1, max_box_height - 3)
+
+        # スクロールオフセットの調整
+        offset = self.state.dialog_offset
+        max_offset = max(0, num_fields - field_rows)
+        offset = max(0, min(offset, max_offset))
+
+        # 現在のフィールドが可視範囲に入るように調整
+        if dlg.current_index < offset:
+            offset = dlg.current_index
+        elif dlg.current_index >= offset + field_rows:
+            offset = dlg.current_index - field_rows + 1
+        self.state.dialog_offset = offset
+
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
 
@@ -548,10 +656,13 @@ class App:
         self._safe_addnstr(top, left, title.ljust(box_width), box_width)
         # 空行
         self._safe_addnstr(top + 1, left, " " * box_width, box_width)
-        # フィールド群
+
+        # フィールド群 (スクロール対応)
         max_input_width = box_width - 18  # ラベル用の適用な余白
         row = top + 2
-        for idx, fs in enumerate[FieldState](dlg.fields):
+        end_index = min(offset + field_rows, num_fields)
+        for idx in range(offset, end_index):
+            fs = dlg.fields[idx]
             marker = ">" if idx == dlg.current_index else " "
             label = f"{marker} {fs.label}: "
             value = fs.buffer
@@ -564,6 +675,33 @@ class App:
         # ヒント
         hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
         self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
+
+        # ---- draw text cursor ---------------------------------------------
+        # 現在のフィールドのカーソル位置に物理カーソルを移動
+        try:
+            fs = dlg.fields[dlg.current_index]
+            # カーソル位置計算
+            cursor_row = top + 2 + dlg.current_index - offset
+            # label + marker + space
+            label = f"> {fs.label}: "
+            # 入力欄の左端 = left + len(label)
+            cursor_col = left + _string_width(label)
+            # buffer内のカーソル位置
+            cursor_col += _string_width(fs.buffer[: fs.cursor])
+            # 物理カーソル表示
+            curses.curs_set(1)
+            max_y, max_x2 = self.stdscr.getmaxyx()
+            if 0 <= cursor_row < max_y and 0 <= cursor_col < max_x2:
+                self.stdscr.move(cursor_row, cursor_col)
+            else:
+                _msg = f"Cursor position is out of screen: {cursor_row}, {cursor_col}"
+                logger.warning(_msg)
+                self.state.msg_footer = _msg
+        except curses.error as e:
+            # ターミナルによってはカーソル制御に失敗するかも
+            _msg = f"Error (draw text cursor): {e}"
+            logger.exception(_msg)
+            self.state.msg_footer = _msg
 
         # bg color off
         if curses.has_colors() and attr:
@@ -584,10 +722,19 @@ class App:
         self.stdscr.attron(attr)
 
         # 行数で高さを決める
-        box_width = min(100, max_x - 4)
+        total_lines = len(ov.lines)
+        box_width = min(MAX_OVERLAY_BOX_WIDTH, max_x - 4)
         max_box_height = content_height
-        needed_height = min(len(ov.lines) + 2, max_box_height)
-        box_height = max(3, needed_height)
+        # title(1) + lines(total_lines) + hint(1)
+        raw_height = min(total_lines + 2, max_box_height)
+        box_height = min(raw_height, max_box_height)
+        lines_rows = max(1, max_box_height - 2)
+
+        # スクロールオフセットの調整
+        offset = self.state.overlay_offset
+        max_offset = max(0, total_lines - lines_rows)
+        offset = max(0, min(offset, max_offset))
+        self.state.overlay_offset = offset
 
         top = content_y + max(0, (content_height - box_height) // 2)
         left = max(2, (max_x - box_width) // 2)
@@ -603,7 +750,8 @@ class App:
         # 本文
         start_row = top + 1
         row = start_row
-        for line in ov.lines[: box_height - 2]:
+        end_index = min(offset + lines_rows, total_lines)
+        for line in ov.lines[offset:end_index]:
             self._safe_addnstr(row, left, line.ljust(box_width), box_width)
             row += 1
 
@@ -666,17 +814,52 @@ class App:
         lines.append("-" * 12)  # 12は"Depended by:"の長さ
 
         self.state.overlay = OverlayState(
-            title="Local DAG (deps/children)",
+            title="Local graph",
             lines=lines,
         )
+        self.state.overlay_offset = 0
         self.state.mode = "overlay"
 
     def _handle_overlay_key(self, key: int) -> None:
-        """Close overlay on any key."""
-        if key in (27,):  # ESC
+        """Handle key press in overlay mode (scrolling and closing)."""
+        ov = self.state.overlay
+        # ESC: close
+        if ov is None or len(ov.lines) < 1 or key in (27,):
             self.state.mode = "list"
             self.state.overlay = None
+            self.state.overlay_offset = 0
             return
+
+        # 可視行数を計算
+        max_y, _ = self.stdscr.getmaxyx()
+        header_height = HeaderLines.height()
+        footer_height = 1
+        content_height = max_y - header_height - footer_height
+        total_lines = len(ov.lines)
+        max_box_height = content_height
+        raw_height = min(total_lines + 2, max_box_height)
+        box_height = min(raw_height, max_box_height)
+        lines_rows = max(1, box_height - 2)
+
+        max_offset = max(0, total_lines - lines_rows)
+        offset = self.state.overlay_offset
+
+        if key in (curses.KEY_UP,):
+            offset = max(0, offset - 1)
+        elif key in (curses.KEY_DOWN,):
+            offset = min(max_offset, offset + 1)
+        elif key in (curses.KEY_HOME,):
+            offset = 0
+        elif key in (curses.KEY_END,):
+            offset = max_offset
+        elif key in (curses.KEY_PPAGE,):
+            offset = max(0, offset - lines_rows)
+        elif key in (curses.KEY_NPAGE,):
+            offset = min(max_offset, offset + lines_rows)
+        else:
+            # ignore other keys
+            return
+        self.state.overlay_offset = offset
 
     # ---- small helpers --------------------------------------------------
 
@@ -741,6 +924,7 @@ class App:
             current_index=0,
             target_task_id=None,
         )
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _start_edit_dialog(self) -> None:
@@ -806,6 +990,7 @@ class App:
             current_index=0,
             target_task_id=task.id,
         )
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _start_request_dialog(self) -> None:
@@ -838,6 +1023,7 @@ class App:
             current_index=0,
             target_task_id=task.id,
         )
+        self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
     def _parse_field(
@@ -1035,7 +1221,7 @@ class App:
             self.state.msg_footer = _msg
             return
 
-    def _handle_dialog_key(self, key: int) -> None:  # noqa: C901
+    def _handle_dialog_key(self, key: int, ch: str | None = None) -> None:  # noqa: C901
         """Handle key press while dialog is active."""
         dlg = self.state.dialog
         if dlg is None:
@@ -1101,10 +1287,20 @@ class App:
             return
 
         # 文字入力 (ASCII 32-126)
-        if 32 <= key <= 126:
-            ch = chr(key)
-            fs.buffer = fs.buffer[: fs.cursor] + ch + fs.buffer[fs.cursor :]
-            fs.cursor += 1
+        # chがstrのときはget_wch()からきた通常文字として扱う
+        insert_ch: str | None = None
+        if ch is not None:
+            insert_ch = ch
+        else:
+            # 従来互換: int だけ渡ってきた場合はASCII文字として扱う
+            if 32 <= key <= 126:
+                insert_ch = chr(key)
+
+        if insert_ch is not None and len(insert_ch) > 0:
+            if insert_ch < " ":
+                return
+            fs.buffer = fs.buffer[: fs.cursor] + insert_ch + fs.buffer[fs.cursor :]
+            fs.cursor += len(insert_ch)
             return
 
     def _set_status(self, status: str) -> None:
@@ -1149,7 +1345,7 @@ class App:
 
     # ---- filter helpers -------------------------------------------------
 
-    def _cycle_status_filter(self) -> None:
+    def _cycle_status_filter(self, *, reverse: bool = False) -> None:
         """Cycle status filter: all -> pending -> in_prog -> done -> requested -> all."""
         order: list[str | None] = [None, "pending", "in_progress", "done", "requested"]
         current = self.state.filter.status
@@ -1157,7 +1353,7 @@ class App:
             idx = order.index(current)
         except ValueError:
             idx = 0
-        idx = (idx + 1) % len(order)
+        idx = (idx + 1) % len(order) if not reverse else (idx - 1) % len(order)
         self.state.filter.status = order[idx]
 
         label_map = {
@@ -1206,10 +1402,10 @@ class App:
         self.state.msg_footer = f"Topo={label}"
         self._reload_tasks()
 
-    def handle_key(self, key: int) -> bool:  # noqa: C901
+    def handle_key(self, key: int, ch: str | None = None) -> bool:  # noqa: C901
         # in dialog
         if self.state.mode == "dialog" and self.state.dialog is not None:
-            self._handle_dialog_key(key)
+            self._handle_dialog_key(key, ch)
             return True
 
         # in overlay
@@ -1251,6 +1447,9 @@ class App:
         elif key in (ord("f"),):
             # status filter cycle
             self._cycle_status_filter()
+        elif key in (ord("F"),):
+            # status filter cycle
+            self._cycle_status_filter(reverse=True)
         elif key in (ord("a"),):
             # archived filter cycle
             self._cycle_archived_filter()
@@ -1278,9 +1477,9 @@ class App:
 
         # scroll keys
         elif key in (ord("["),):
-            self._scroll_detail(-3)
+            self._scroll_detail(-1)
         elif key in (ord("]"),):
-            self._scroll_detail(+3)
+            self._scroll_detail(+1)
 
         # dialog keys
         elif key in (ord("A"),):
@@ -1302,8 +1501,10 @@ def main(stdscr: curses.window, args: argparse.Namespace | None = None) -> int:
     app = App(stdscr, args)
     while True:
         app.draw()
-        key = stdscr.getch()
-        cont = app.handle_key(key)
+        key_raw = stdscr.get_wch()
+        key = ord(key_raw) if isinstance(key_raw, str) else key_raw
+        ch = key_raw if isinstance(key_raw, str) else None
+        cont = app.handle_key(key, ch)
         if not cont:
             break
     return 0

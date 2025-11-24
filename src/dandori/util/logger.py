@@ -2,7 +2,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from dandori.util.dirs import DEFAULT_HOME
+from dandori.util.dirs import DEFAULT_HOME, ensure_dirs
 
 
 def setup_mode(*, is_debug: bool) -> None:
@@ -29,6 +29,7 @@ def setup_logger(
         logger.addHandler(stream_handler)
 
     if is_file:
+        ensure_dirs()
         time_rotate_file_handler = TimedRotatingFileHandler(
             (Path(DEFAULT_HOME) / f"{name.lower()}.log").as_posix(),
             when="MIDNIGHT",

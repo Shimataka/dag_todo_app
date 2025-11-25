@@ -7,7 +7,7 @@ def print_task(t: Task) -> None:
     print(f"id: {t.id}")
     print(f"title: {t.title}")
     print(f"status: {t.status}  priority: {t.priority}  archived: {t.is_archived}")
-    print(f"due: {t.due_date}  start: {t.start_date}")
+    print(f"due: {t.due_date}  start: {t.start_at}")
     print(f"depends_on: {t.depends_on}")
     print(f"children:   {t.children}")
     print(f"created_at: {t.created_at}  updated_at: {t.updated_at}")

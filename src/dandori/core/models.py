@@ -7,13 +7,14 @@ from dandori.util.time import now_iso
 @dataclass
 class Task:
     id: str
+    owner: str
     title: str
     description: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
     done_at: str | None = None
     due_date: str | None = None
-    start_date: str | None = None
+    start_at: str | None = None
     priority: int | None = None
     status: Literal["pending", "in_progress", "done", "requested", "removed"] = "pending"
     depends_on: list[str] = field(default_factory=list)  # 複数親OK

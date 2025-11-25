@@ -30,6 +30,8 @@ from dandori.util.time import format_requested_sla
 
 logger = setup_logger(__name__, is_stream=True, is_file=True)
 
+LENGTH_SHORTEND_ID = 7
+
 
 def get_store() -> Store:
     return StoreToYAML()
@@ -57,6 +59,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             overwrite_id_by=parse_id_with_msg(
                 args.id,
                 source_ids=[t.id for t in list_tasks()],
+                shortend_length=LENGTH_SHORTEND_ID,
             ),
         )
 
@@ -122,7 +125,13 @@ def cmd_show(args: argparse.Namespace) -> int:
         if args.id is None:
             logger.exception("id is required")
             return 1
-        t = get_task(parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()]))
+        t = get_task(
+            parse_id_with_msg(
+                args.id,
+                source_ids=[t.id for t in list_tasks()],
+                shortend_length=LENGTH_SHORTEND_ID,
+            ),
+        )
         print_task(t)
     except OpsError as e:
         _msg = f"An error occurred while showing a task: {e!s}"
@@ -134,7 +143,11 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_update(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         # 基本フィールドの更新
         if any(
             [
@@ -203,7 +216,11 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 def cmd_inprogress(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         set_status(args_id, "in_progress")
         print(f"in_progress: {args_id}")
     except OpsError as e:
@@ -216,7 +233,11 @@ def cmd_inprogress(args: argparse.Namespace) -> int:
 
 def cmd_done(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         set_status(args_id, "done")
         print(f"done: {args_id}")
     except OpsError as e:
@@ -233,9 +254,21 @@ def cmd_insert(args: argparse.Namespace) -> int:
         if args.a is None or args.b is None or args.id is None:
             logger.exception("a, b, and id are required")
             return 1
-        a_id = parse_id_with_msg(args.a, source_ids=[t.id for t in tasks])
-        b_id = parse_id_with_msg(args.b, source_ids=[t.id for t in tasks])
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in tasks])
+        a_id = parse_id_with_msg(
+            args.a,
+            source_ids=[t.id for t in tasks],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
+        b_id = parse_id_with_msg(
+            args.b,
+            source_ids=[t.id for t in tasks],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in tasks],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         new_task = insert_between(
             a_id,
             b_id,
@@ -256,7 +289,11 @@ def cmd_insert(args: argparse.Namespace) -> int:
 
 def cmd_archive(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         ids = archive_tree(args_id)
         print("archived:")
         for i in ids:
@@ -271,7 +308,11 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
 def cmd_restore(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         ids = unarchive_tree(args_id)
         print("restored:")
         for i in ids:
@@ -286,7 +327,11 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 def cmd_deps(args: argparse.Namespace) -> int:
     try:
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         t = get_task(args_id)
         print("depends_on:")
         for pid in t.depends_on:
@@ -305,7 +350,11 @@ def cmd_deps(args: argparse.Namespace) -> int:
 def cmd_reason(args: argparse.Namespace) -> int:
     st = get_store()
     st.load()
-    args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+    args_id = parse_id_with_msg(
+        args.id,
+        source_ids=[t.id for t in list_tasks()],
+        shortend_length=LENGTH_SHORTEND_ID,
+    )
     _info = st.get_dependency_info(args_id)
     if _info.is_err():
         _msg = f"An error occurred while getting dependency info: {_info.unwrap_err()}"
@@ -322,7 +371,11 @@ def cmd_reason(args: argparse.Namespace) -> int:
 def cmd_request(args: argparse.Namespace) -> int:
     try:
         env = load_env()
-        args_id = parse_id_with_msg(args.id, source_ids=[t.id for t in list_tasks()])
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+            shortend_length=LENGTH_SHORTEND_ID,
+        )
         set_requested(
             args_id,
             requested_to=args.assignee,

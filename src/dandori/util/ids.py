@@ -18,15 +18,19 @@ def parse_id(
     s: str,
     *,
     source_ids: list[str],
+    shortend_length: int | None = None,
 ) -> Result[str, str]:
     s = s.strip()
     if len(s) == 0:
         return Err("Empty ID")
     # full ID search
     candidates = [tid for tid in source_ids if tid == s]
-    # 6-chars prefix search
-    if len(candidates) == 0 and len(s) == 6:
-        candidates = [tid for tid in source_ids if tid[:6] == s]
+    # LENGTH_SHORTEND_ID-chars prefix search
+    if len(candidates) == 0:
+        if shortend_length is None:
+            pass
+        elif len(s) == shortend_length:
+            candidates = [tid for tid in source_ids if tid[:shortend_length] == s]
     # match only one
     if len(candidates) == 1:
         return Ok(candidates[0])
@@ -43,10 +47,15 @@ def parse_ids(
     *,
     source_ids: list[str],
     sep: str = ",",
+    shortend_length: int | None = None,
 ) -> Result[list[str], str]:
     ids: list[str] = []
-    for s6 in s.split(sep):
-        match parse_id(s6, source_ids=source_ids):
+    for s_shortend in s.split(sep):
+        match parse_id(
+            s_shortend,
+            source_ids=source_ids,
+            shortend_length=shortend_length,
+        ):
             case Ok(tid):
                 ids.append(tid)
             case Err(e):
@@ -58,12 +67,17 @@ def parse_id_with_msg(
     s: str | None,
     *,
     source_ids: list[str],
+    shortend_length: int | None = None,
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> str:
     if s is None:
         return ""
-    match parse_id(s, source_ids=source_ids):
+    match parse_id(
+        s,
+        source_ids=source_ids,
+        shortend_length=shortend_length,
+    ):
         case Ok(tid):
             return tid  # type: ignore[no-any-return]
         case Err(e):
@@ -86,12 +100,18 @@ def parse_ids_with_msg(
     *,
     source_ids: list[str],
     sep: str = ",",
+    shortend_length: int | None = None,
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> list[str]:
     if s is None:
         return []
-    match parse_ids(s, source_ids=source_ids, sep=sep):
+    match parse_ids(
+        s,
+        source_ids=source_ids,
+        sep=sep,
+        shortend_length=shortend_length,
+    ):
         case Ok(ids):
             return ids  # type: ignore[no-any-return]
         case Err(e):

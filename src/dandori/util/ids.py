@@ -6,7 +6,7 @@ from pyresults import Err, Ok, Result
 from dandori.util.logger import setup_logger
 from dandori.util.time import JST
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 
 def gen_task_id(username: str) -> str:

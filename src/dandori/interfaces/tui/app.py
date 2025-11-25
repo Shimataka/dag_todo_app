@@ -24,7 +24,7 @@ from dandori.interfaces.tui.view import AppView
 from dandori.util.ids import parse_ids_with_msg
 from dandori.util.logger import setup_logger
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 locale.setlocale(locale.LC_ALL, "")
 

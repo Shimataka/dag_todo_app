@@ -23,7 +23,7 @@ from dandori.interfaces.tui.style import (
 )
 from dandori.util.logger import setup_logger
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 locale.setlocale(locale.LC_ALL, "")
 

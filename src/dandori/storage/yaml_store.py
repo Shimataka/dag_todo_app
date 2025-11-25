@@ -10,7 +10,7 @@ from dandori.storage.base import Store
 from dandori.util.logger import setup_logger
 from dandori.util.time import now_iso
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 
 class StoreToYAML(Store):

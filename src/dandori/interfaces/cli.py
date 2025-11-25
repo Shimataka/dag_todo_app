@@ -28,7 +28,7 @@ from dandori.util.ids import parse_id_with_msg
 from dandori.util.logger import setup_logger, setup_mode
 from dandori.util.time import format_requested_sla
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 LENGTH_SHORTEND_ID = 7
 

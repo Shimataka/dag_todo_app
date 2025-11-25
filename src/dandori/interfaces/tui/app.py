@@ -1,11 +1,9 @@
 import argparse
 import curses
 import locale
-import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from dandori.core.models import Task
 from dandori.core.ops import (
@@ -20,6 +18,9 @@ from dandori.core.ops import (
     unarchive_tree,
     update_task,
 )
+from dandori.interfaces.tui.data import AppState, DialogState, FieldState, OverlayState
+from dandori.interfaces.tui.style import LENGTH_SHORTEND_ID
+from dandori.interfaces.tui.view import AppView
 from dandori.util.ids import parse_ids_with_msg
 from dandori.util.logger import setup_logger
 
@@ -29,38 +30,6 @@ locale.setlocale(locale.LC_ALL, "")
 
 T = TypeVar("T")
 V = TypeVar("V")
-Mode = Literal[
-    "list",
-    "dialog",
-    "overlay",
-]
-DialogKind = Literal[
-    "add",
-    "edit",
-    "request",
-]
-
-
-def _char_width(ch: str) -> int:
-    """Calculate the width of a character in the terminal."""
-    if len(ch) == 0:
-        return 0
-    # 制御文字
-    if ch < " ":
-        return 0
-    # 結合文字 (濁点など)
-    if unicodedata.combining(ch):
-        return 0
-    # 東アジア文字幅プロパティ
-    # F: full-width, W: wide, A: ambiguous を2倍にして返す
-    if unicodedata.east_asian_width(ch) in ("F", "W", "A"):
-        return 2
-    return 1
-
-
-def _string_width(s: str) -> int:
-    """Calculate the width of a string in the terminal."""
-    return sum(map(_char_width, s))
 
 
 STATUS_MARK_MAP = {
@@ -132,65 +101,6 @@ class HeaderLines:
         return help_line
 
 
-@dataclass
-class OverlayState:
-    """Read-only overlay to show local graph (deps/children) etc."""
-
-    title: str
-    lines: list[str]
-
-
-@dataclass
-class FilterState:
-    status: str | None = None  # None=すべて/pending/in_progress/done/requested/removed ステータスフィルタ
-    archived: bool | None = None  # None=すべて/False=unarchived/True=archived
-    requested_only: bool = False  # requested ステータスのみ表示フラグ
-    topo: bool = False  # トポロジカルソート表示フラグ
-    tags: list[str] = field(default_factory=list)  # タグフィルタ
-
-
-@dataclass
-class FieldState:
-    """Single-line field in a dialog form."""
-
-    name: str  # title, description, priorityなど
-    label: str  # 画面表示用ラベル
-    buffer: str = ""  # 編集中テキスト
-    cursor: int = 0  # カーソル位置
-
-
-@dataclass
-class DialogState:
-    kind: DialogKind
-    title: str
-    fields: list[FieldState] = field(default_factory=list)
-    current_index: int = 0  # 現在のフィールドインデックス
-    target_task_id: str | None = None  # 編集対象のタスクID
-
-
-@dataclass
-class AppState:
-    tasks: list[Task] = field(default_factory=list)
-    selected_index: int = 0
-    mode: Mode = "list"
-    filter: FilterState = field(default_factory=FilterState)
-    dialog: DialogState | None = None
-    overlay: OverlayState | None = None
-
-    # UI用
-    msg_footer: str | None = None  # フッターメッセージ表示
-    window_list_width: int = 0
-    window_list_height: int = 0
-    window_detail_width: int = 0
-    window_detail_height: int = 0
-
-    # scroll用
-    list_offset: int = 0  # list viewのstart rowのオフセット
-    detail_offset: int = 0  # detail viewのstart rowのオフセット
-    dialog_offset: int = 0  # dialog viewのstart rowのオフセット
-    overlay_offset: int = 0  # overlay viewのstart rowのオフセット
-
-
 class App:
     def __init__(
         self,
@@ -200,6 +110,7 @@ class App:
         self.stdscr = stdscr
         self.args = args
         self.state = AppState()
+        self.view = AppView(stdscr, self.state)
         self._init_curses()
         self._reload_tasks()
 
@@ -266,503 +177,11 @@ class App:
         self.state.list_offset = 0
         self.state.detail_offset = 0
 
-    def _safe_addnstr(self, y: int, x: int, s: str, n: int) -> None:
-        # 画面サイズを更新
-        max_y, max_x = self.stdscr.getmaxyx()
-        self.state.window_list_width = max_x // 2
-        self.state.window_detail_width = max_x - self.state.window_list_width
-        self.state.window_list_height = max_y - 1
-        self.state.window_detail_height = max_y - 1
-
-        # 画面外なら描かない
-        if y < 0 or y >= max_y or x < 0 or x >= max_x:
-            return
-        # 右端を超えないようにクリップ
-        limit = max_x - x
-        if limit <= 0 or n <= 0:
-            return
-        # 最終行では右端1マスを開ける
-        if y == max_y - 1 and limit == max_x:
-            limit -= 1
-        s = s.replace("\t", " ")  # タブがいると幅が読めないので潰す
-        n = min(n, len(s), limit)
-        if n <= 0:
-            return
-        # nを減らしながらトライ (例外が発生したら1文字ずつ減らして再試行)
-        while n > 0:
-            chunk = s[:n]
-            try:
-                self.stdscr.addnstr(y, x, chunk, n)
-            except curses.error:
-                n -= 1
-            else:
-                return
-
-    def draw(self) -> None:
-        self.stdscr.erase()
-        max_y, max_x = self.stdscr.getmaxyx()
-        if max_y < 2 or max_x < 2:
-            # 端末サイズが小さすぎる場合は描画を諦める
-            self.stdscr.refresh()
-            return
-
-        header_height = HeaderLines.height()
-        footer_height = 1
-        content_height = max_y - header_height - footer_height
-        if content_height <= 0 or max_x <= 0:
-            self.stdscr.refresh()
-            return
-
-        list_width = max_x // 2
-        detail_width = max_x - list_width
-
-        self._draw_header(0, max_x)
-        self._draw_footer(max_y - 1, max_x)
-        self._draw_list(header_height, content_height, list_width)
-        self._draw_detail(header_height, content_height, list_width, detail_width)
-
-        if self.state.mode == "dialog" and self.state.dialog is not None:
-            self._draw_dialog(header_height, content_height, max_x)
-        else:
-            # dialogでないならカーソルを隠す
-            try:
-                self._cursor_off()
-            except curses.error:
-                logger.exception("Error (cursor off)")
-                self.state.msg_footer = "Error (cursor off)"
-        if self.state.mode == "overlay" and self.state.overlay is not None:
-            self._draw_overlay(header_height, content_height, max_x)
-
-        self.stdscr.refresh()
-
-    def _draw_header(self, y: int, width: int) -> None:
-        f = self.state.filter
-
-        # status表示
-        status_label_map = {
-            None: "all",
-            "pending": "pending",
-            "in_progress": "in_progress",
-            "done": "done",
-            "requested": "requested",
-            "removed": "removed",
-        }
-        status_label = status_label_map.get(f.status, "all")
-
-        # archived表示
-        if f.archived is True:
-            archived_label = "archived"
-        elif f.archived is False:
-            archived_label = "active"
-        else:
-            archived_label = "all"
-
-        # requested_only表示
-        req_label = "on" if f.requested_only else "off"
-
-        # topo表示
-        topo_label = "on" if f.topo else "off"
-
-        # ヘッダータイトルを作成
-        title = HeaderLines.title()
-        status = HeaderLines.status(status_label, archived_label, topo_label, req_label)
-        helps = HeaderLines.help()
-
-        if curses.has_colors():
-            self.stdscr.attron(curses.color_pair(MAIN_THEME_COLOR))
-        self._safe_addnstr(y, 0, title.ljust(width), width)
-        self._safe_addnstr(y + 1, 0, status.ljust(width), width)
-        self._safe_addnstr(y + 2, 0, helps.ljust(width), width)
-        if curses.has_colors():
-            self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
-
-    def _draw_footer(self, y: int, width: int) -> None:
-        msg = self.state.msg_footer or ""
-        if curses.has_colors():
-            self.stdscr.attron(0)
-        self._safe_addnstr(y, 0, msg.ljust(width), width)
-        if curses.has_colors():
-            self.stdscr.attroff(0)
-
-    def _draw_list(  # noqa: C901
-        self,
-        y: int,
-        height: int,
-        width: int,
-    ) -> None:
-        tasks = self.state.tasks
-
-        # 全行数 (0: ダミー行, 1..len(tasks): 実タスク行)
-        total_rows = len(tasks) + 1  # +1 はルートタスク追加用のダミー行
-        if total_rows <= 0 or height <= 0:
-            return
-
-        # selected_indexをclamp
-        self.state.selected_index = max(0, min(self.state.selected_index, total_rows - 1))
-
-        # list_offsetをclamp
-        if self.state.selected_index < self.state.list_offset:
-            self.state.list_offset = self.state.selected_index
-        elif self.state.selected_index >= self.state.list_offset + height:
-            self.state.list_offset = self.state.selected_index - height + 1
-
-        self.state.list_offset = max(0, min(self.state.list_offset, max(0, total_rows - height)))
-
-        start = self.state.list_offset
-        end = min(start + height, total_rows)
-
-        for i, idx in enumerate[int](range(start, end)):
-            try:
-                t = tasks[idx - 1]
-            except IndexError:
-                t = Task(id="Unknown", title=f"IndexError with idx={idx - 1}")
-            row_y = y + i
-
-            attrs = 0
-            # color on
-            if curses.has_colors():
-                # add task
-                if idx == 0:
-                    attrs |= curses.color_pair(ADD_TASK_COLOR)
-                # done
-                elif t.status == "done":
-                    attrs |= curses.color_pair(COMPLETED_COLOR)
-                # requested
-                elif t.status == "requested":
-                    attrs |= curses.color_pair(REQUESTED_COLOR)
-                # archived
-                elif t.is_archived:
-                    attrs |= curses.color_pair(SURPRESSED_COLOR)
-                # in_progress
-                elif t.status == "in_progress":
-                    attrs |= curses.color_pair(WORKING_COLOR)
-                # pending
-                elif t.status == "pending":
-                    attrs |= curses.color_pair(WAITING_COLOR)
-                # selected row --> fg/bg reversed
-                if idx == self.state.selected_index:
-                    attrs |= curses.A_REVERSE
-                if attrs:
-                    self.stdscr.attron(attrs)
-
-            # charactor in list line
-            if idx == 0:
-                line = "[--- Add a task (Enter or 'A' key) ---]"
-                self._safe_addnstr(row_y, 0, line.ljust(width), width)
-            else:
-                line = self._format_list_line(t, width)
-                self._safe_addnstr(row_y, 0, line.ljust(width), width)
-
-            # color off
-            if attrs:
-                self.stdscr.attroff(attrs)
-
-    def _format_list_line(self, t: Task, width: int) -> str:
-        # status/archived marks
-        marks: list[str] = []
-        if t.is_archived:
-            marks.append("A")
-        status_str = STATUS_MARK_MAP.get(t.status, "?")
-
-        short_id = t.id[:6]
-        title = t.title.replace("\n", " ")
-
-        line = f"{status_str} {short_id:<6} {title}"
-        return line[:width]
-
-    def _draw_detail(  # noqa: C901
-        self,
-        y: int,
-        height: int,
-        x: int,
-        width: int,
-    ) -> None:
-        if height <= 0 or width <= 0:
-            return
-        for row in range(height):
-            if curses.has_colors():
-                self.stdscr.attron(0)
-            self._safe_addnstr(y + row, x, " " * width, width)
-            if curses.has_colors():
-                self.stdscr.attroff(0)
-
-        if not self.state.tasks:
-            text = "(no tasks)"
-            if curses.has_colors():
-                self.stdscr.attron(0)
-            self._safe_addnstr(y, x, text.ljust(width), width)
-            if curses.has_colors():
-                self.stdscr.attroff(0)
-            return
-
-        t = self._current_task()
-        if t is None:
-            text = "<If enter/'a' is pressed, you can add a new root task>"
-            self._safe_addnstr(y, x, text.ljust(width), width)
-            return
-
-        # 表示用の視覚行 (wrap 済み) を構成
-        visual_lines = self._build_detail_lines(t, width)
-        if not visual_lines:
-            visual_lines = ["(no details)"]
-
-        # detail_offset をクランプ
-        max_offset = max(0, len(visual_lines) - max(0, height))
-        self.state.detail_offset = max(0, min(self.state.detail_offset, max_offset))
-
-        start = self.state.detail_offset
-        end = min(start + height, len(visual_lines))
-
-        row = 0
-        for line in visual_lines[start:end]:
-            if row >= height:
-                break
-            start = 0
-            while start < len(line) and row < height:
-                chunk = line[start : start + width]
-                if curses.has_colors():
-                    self.stdscr.attron(0)
-                self._safe_addnstr(y + row, x, chunk, width)
-                if curses.has_colors():
-                    self.stdscr.attroff(0)
-                start += width
-                row += 1
-
-    def _build_detail_lines(  # noqa: C901
-        self,
-        t: Task,
-        width: int,
-    ) -> list[str]:
-        """Build wrapped detail lines for a task."""
-        base: list[str] = []
-        base.append(f"ID: {t.id}")
-        base.append(f"Title: {t.title}")
-        status: str = t.status
-        if t.is_archived:
-            status += " (archived)"
-        base.append(f"Status: {status}")
-        base.append(f"Priority: {t.priority}")
-        if t.start_date:
-            base.append(f"Start: {t.start_date}")
-        if t.due_date:
-            base.append(f"Due:   {t.due_date}")
-        if t.tags:
-            base.append("Tags: " + ", ".join(t.tags))
-        if t.depends_on:
-            base.append("Depends on: " + ", ".join(t.depends_on))
-        if t.children:
-            base.append("Children:   " + ", ".join(t.children))
-        if t.description:
-            base.append("")
-            base.append("Description:")
-            base.extend(["  " + line for line in t.description.splitlines()])
-
-        visual: list[str] = []
-        for line in base:
-            if not line:
-                visual.append("")
-                continue
-            s = line
-            while s:
-                chunk = s[:width]
-                visual.append(chunk)
-                s = s[width:]
-        return visual
-
-    def _scroll_detail(self, delta: int) -> None:
-        """Scroll detail view by delta visual lines."""
-        if delta == 0:
-            return
-
-        t = self._current_task()
-        if t is None:
-            return
-
-        max_y, max_x = self.stdscr.getmaxyx()
-        header_height = HeaderLines.height()
-        footer_height = 1
-        content_height = max_y - header_height - footer_height
-        if content_height <= 0 or max_x <= 0:
-            return
-
-        list_width = max_x // 2
-        detail_width = max_x - list_width
-
-        visual_lines = self._build_detail_lines(t, detail_width)
-        if not visual_lines:
-            return
-
-        max_offset = max(0, len(visual_lines) - max(0, content_height))
-        new_offset = self.state.detail_offset + delta
-        self.state.detail_offset = max(0, min(new_offset, max_offset))
-
-    # ---- dialog ---------------------------------------------------------
-
-    def _draw_dialog(  # noqa: C901
-        self,
-        content_y: int,
-        content_height: int,
-        max_x: int,
-    ) -> None:
-        """Draw simple centered one-line input dialog."""
-        dlg = self.state.dialog
-        if dlg is None:
-            return
-
-        num_fields = len(dlg.fields)
-        if num_fields == 0:
-            return
-
-        box_width = min(MAX_DIALOG_BOX_WIDTH, max_x - 4)
-        max_box_height = content_height
-        # title(1) + empty(1) + fields(num_fields) + hint(1)
-        raw_height = 3 + num_fields
-        box_height = min(raw_height, max_box_height)
-        # フィールドを描画できる行数
-        field_rows = max(1, max_box_height - 3)
-
-        # スクロールオフセットの調整
-        offset = self.state.dialog_offset
-        max_offset = max(0, num_fields - field_rows)
-        offset = max(0, min(offset, max_offset))
-
-        # 現在のフィールドが可視範囲に入るように調整
-        if dlg.current_index < offset:
-            offset = dlg.current_index
-        elif dlg.current_index >= offset + field_rows:
-            offset = dlg.current_index - field_rows + 1
-        self.state.dialog_offset = offset
-
-        top = content_y + max(0, (content_height - box_height) // 2)
-        left = max(2, (max_x - box_width) // 2)
-
-        # bg color on
-        attr = 0
-        if curses.has_colors():
-            attr |= curses.color_pair(DIALOG_BG_COLOR)
-        self.stdscr.attron(attr)
-
-        # 枠線と中線をクリア
-        for row in range(box_height):
-            self._safe_addnstr(top + row, left, " " * box_width, box_width)
-
-        # タイトル
-        title = f"[{dlg.title}]"
-        self._safe_addnstr(top, left, title.ljust(box_width), box_width)
-        # 空行
-        self._safe_addnstr(top + 1, left, " " * box_width, box_width)
-
-        # フィールド群 (スクロール対応)
-        max_input_width = box_width - 18  # ラベル用の適用な余白
-        row = top + 2
-        end_index = min(offset + field_rows, num_fields)
-        for idx in range(offset, end_index):
-            fs = dlg.fields[idx]
-            marker = ">" if idx == dlg.current_index else " "
-            label = f"{marker} {fs.label}: "
-            value = fs.buffer
-            if len(value) > max_input_width:
-                value = value[-max_input_width:]
-            line = (label + value)[:box_width]
-            self._safe_addnstr(row, left, line.ljust(box_width), box_width)
-            row += 1
-
-        # ヒント
-        hint = "[Tab/↑/↓: Move, Enter: Apply, Esc: Cancel]"
-        self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
-
-        # ---- draw text cursor ---------------------------------------------
-        # 現在のフィールドのカーソル位置に物理カーソルを移動
-        try:
-            fs = dlg.fields[dlg.current_index]
-            # カーソル位置計算
-            cursor_row = top + 2 + dlg.current_index - offset
-            # label + marker + space
-            label = f"> {fs.label}: "
-            # 入力欄の左端 = left + len(label)
-            cursor_col = left + _string_width(label)
-            # buffer内のカーソル位置
-            cursor_col += _string_width(fs.buffer[: fs.cursor])
-            # 物理カーソル表示
-            curses.curs_set(1)
-            max_y, max_x2 = self.stdscr.getmaxyx()
-            if 0 <= cursor_row < max_y and 0 <= cursor_col < max_x2:
-                self.stdscr.move(cursor_row, cursor_col)
-            else:
-                _msg = f"Cursor position is out of screen: {cursor_row}, {cursor_col}"
-                logger.warning(_msg)
-                self.state.msg_footer = _msg
-        except curses.error as e:
-            # ターミナルによってはカーソル制御に失敗するかも
-            _msg = f"Error (draw text cursor): {e}"
-            logger.exception(_msg)
-            self.state.msg_footer = _msg
-
-        # bg color off
-        if curses.has_colors() and attr:
-            self.stdscr.attroff(attr)
-
-    # ---- overlay --------------------------------------------------------
-
-    def _draw_overlay(self, content_y: int, content_height: int, max_x: int) -> None:
-        """Draw small overlay to show local graph (deps/children) etc."""
-        ov = self.state.overlay
-        if ov is None or not ov.lines:
-            return
-
-        # bg color on
-        attr = 0
-        if curses.has_colors():
-            attr |= curses.color_pair(OVERLAY_BG_COLOR)
-        self.stdscr.attron(attr)
-
-        # 行数で高さを決める
-        total_lines = len(ov.lines)
-        box_width = min(MAX_OVERLAY_BOX_WIDTH, max_x - 4)
-        max_box_height = content_height
-        # title(1) + lines(total_lines) + hint(1)
-        raw_height = min(total_lines + 2, max_box_height)
-        box_height = min(raw_height, max_box_height)
-        lines_rows = max(1, max_box_height - 2)
-
-        # スクロールオフセットの調整
-        offset = self.state.overlay_offset
-        max_offset = max(0, total_lines - lines_rows)
-        offset = max(0, min(offset, max_offset))
-        self.state.overlay_offset = offset
-
-        top = content_y + max(0, (content_height - box_height) // 2)
-        left = max(2, (max_x - box_width) // 2)
-
-        # クリア
-        for row in range(box_height):
-            self._safe_addnstr(top + row, left, " " * box_width, box_width)
-
-        # タイトル
-        title = f"[{ov.title}]"
-        self._safe_addnstr(top, left, title.ljust(box_width), box_width)
-
-        # 本文
-        start_row = top + 1
-        row = start_row
-        end_index = min(offset + lines_rows, total_lines)
-        for line in ov.lines[offset:end_index]:
-            self._safe_addnstr(row, left, line.ljust(box_width), box_width)
-            row += 1
-
-        # ヒント
-        hint = "[ESC key: close]"
-        self._safe_addnstr(top + box_height - 1, left, hint.ljust(box_width), box_width)
-
-        # bg color off
-        if curses.has_colors() and attr:
-            self.stdscr.attroff(attr)
-
     # ---- overlay helpers ------------------------------------------------
 
     def _start_graph_overlay(self) -> None:
         """Show local graph (deps and children) for current task."""
-        task = self._current_task()
+        task = self.view.current_task()
         if task is None:
             self.state.msg_footer = "No task selected"
             return
@@ -781,7 +200,7 @@ class App:
         if deps:
             for d in deps:
                 s = f"  ^ [{STATUS_MARK_MAP.get(d.status, '?')}] "
-                s += f"({d.id[:6]:<6}) "
+                s += f"({d.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}) "
                 s += f"{d.title} "
                 s += f"[{d.due_date}]" if d.due_date else ""
                 lines.append(s)
@@ -790,7 +209,7 @@ class App:
         # ---
         lines.append("(Selected)")
         s = f"  - [{STATUS_MARK_MAP.get(task.status, '?')}] "
-        s += f"({task.id[:6]:<6}) "
+        s += f"({task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}) "
         s += f"{task.title} "
         s += f"[{task.due_date}]" if task.due_date else ""
         lines.append(s)
@@ -799,7 +218,7 @@ class App:
         if children:
             for c in children:
                 s = f"  v [{STATUS_MARK_MAP.get(c.status, '?')}] "
-                s += f"({c.id[:6]:<6}) "
+                s += f"({c.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}) "
                 s += f"{c.title} "
                 s += f"[{c.due_date}]" if c.due_date else ""
                 lines.append(s)
@@ -858,20 +277,6 @@ class App:
 
     # ---- small helpers --------------------------------------------------
 
-    def _current_task(self) -> Task | None:
-        """Return currently selected task or None."""
-        tasks = self.state.tasks
-        if not tasks:
-            return None
-        # index 0 はルートタスク追加用のダミー行として扱う
-        idx = self.state.selected_index
-        if idx <= 0:
-            return None
-        real_idx = idx - 1
-        if not (0 <= real_idx < len(tasks)):
-            return None
-        return self.state.tasks[real_idx]
-
     def _start_add_dialog(self) -> None:
         """Open dialog to add a new top-level task"""
         fields = [
@@ -924,7 +329,7 @@ class App:
 
     def _start_edit_dialog(self) -> None:
         """Open dialog to edit the current task"""
-        task = self._current_task()
+        task = self.view.current_task()
         if task is None:
             self.state.msg_footer = "No task selected"
             return
@@ -944,8 +349,8 @@ class App:
             FieldState(
                 name="start_date",
                 label="Start Date (ISO format)    ",
-                buffer=task.start_date or "",
-                cursor=len(task.start_date or ""),
+                buffer=task.start_at or "",
+                cursor=len(task.start_at or ""),
             ),
             FieldState(
                 name="due_date",
@@ -967,15 +372,15 @@ class App:
             ),
             FieldState(
                 name="depends_on",
-                label="Depends on (6-chars, ',')  ",
-                buffer=", ".join([t[:6] for t in task.depends_on]),
-                cursor=len(", ".join([t[:6] for t in task.depends_on])),
+                label=f"Depends on ({LENGTH_SHORTEND_ID}-chars, ',')  ",
+                buffer=", ".join([t[:LENGTH_SHORTEND_ID] for t in task.depends_on]),
+                cursor=len(", ".join([t[:LENGTH_SHORTEND_ID] for t in task.depends_on])),
             ),
             FieldState(
                 name="children",
-                label="Children (6-chars, ',')    ",
-                buffer=", ".join([t[:6] for t in task.children]),
-                cursor=len(", ".join([t[:6] for t in task.children])),
+                label=f"Children ({LENGTH_SHORTEND_ID}-chars, ',')    ",
+                buffer=", ".join([t[:LENGTH_SHORTEND_ID] for t in task.children]),
+                cursor=len(", ".join([t[:LENGTH_SHORTEND_ID] for t in task.children])),
             ),
         ]
         self.state.dialog = DialogState(
@@ -990,7 +395,7 @@ class App:
 
     def _start_request_dialog(self) -> None:
         """Open dialog to mark current task as requested (assignee + note)"""
-        task = self._current_task()
+        task = self.view.current_task()
         if task is None:
             self.state.msg_footer = "No task selected"
             return
@@ -1102,6 +507,7 @@ class App:
                     s,
                     source_ids=[t.id for t in self.state.tasks],
                     msg_buffer=self.state.msg_footer,
+                    shortend_length=LENGTH_SHORTEND_ID,
                 ),
                 None,
                 "Invalid depends_on value '{}'",
@@ -1114,6 +520,7 @@ class App:
                     s,
                     source_ids=[t.id for t in self.state.tasks],
                     msg_buffer=self.state.msg_footer,
+                    shortend_length=LENGTH_SHORTEND_ID,
                 ),
                 None,
                 "Invalid children value '{}'",
@@ -1130,7 +537,7 @@ class App:
                 return
             # 親は「現在選択中のタスク」で、なければルートタスク
             parent_ids: list[str] = []
-            current = self._current_task()
+            current = self.view.current_task()
             if current is not None:
                 parent_ids = [current.id]
 
@@ -1148,7 +555,7 @@ class App:
                 self.state.msg_footer = f"Error (add): {e}"
                 return
             else:
-                self.state.msg_footer = f"Added: {task.id[:6]:<6}"
+                self.state.msg_footer = f"Added: {task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}"
                 self._reload_tasks(keep_task_id=task.id)
         # edit task
         elif dlg.kind == "edit":
@@ -1175,7 +582,7 @@ class App:
                 self.state.msg_footer = f"Error (edit): {e}"
                 return
             else:
-                self.state.msg_footer = f"Updated: {task.id[:6]}"
+                self.state.msg_footer = f"Updated: {task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}"
                 self._reload_tasks(keep_task_id=task.id)
         elif dlg.kind == "request":
             # title (required)
@@ -1195,7 +602,9 @@ class App:
                 self.state.msg_footer = f"Error (request): {e}"
                 return
             else:
-                self.state.msg_footer = f"Requested: {dlg.target_task_id[:6]:<6}"
+                self.state.msg_footer = (
+                    f"Requested: {dlg.target_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}"
+                )
                 self._reload_tasks(keep_task_id=dlg.target_task_id)
 
         else:
@@ -1288,7 +697,7 @@ class App:
 
     def _set_status(self, status: str) -> None:
         """Wrap core.ops.set_status with error handling and reload."""
-        task = self._current_task()
+        task = self.view.current_task()
         if task is None:
             self.state.msg_footer = "No task selected"
             return
@@ -1298,12 +707,12 @@ class App:
         except OpsError as e:
             self.state.msg_footer = f"Error: {e}"
         else:
-            self.state.msg_footer = f"Status -> {status}: {task.id[:6]:<6}"
+            self.state.msg_footer = f"Status -> {status}: {task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}"
             self._reload_tasks(keep_task_id=task.id)
 
     def _toggle_archive_tree(self, *, archive: bool) -> None:
         """Archive or unarchive weakly connected component."""
-        task = self._current_task()
+        task = self.view.current_task()
         if task is None:
             self.state.msg_footer = "No task selected"
             return
@@ -1427,6 +836,7 @@ class App:
             self.state.detail_offset = 0
 
         # shortcut keys
+        # change sort order of filter
         elif key in (ord("f"),):
             # status filter cycle
             self._cycle_status_filter()
@@ -1442,27 +852,29 @@ class App:
         elif key in (ord("t"),):
             # topo on/off
             self._toggle_topo()
-        elif key in (ord("p"),):
+
+        # change status
+        elif key in (ord("P"),):
             # pending
             self._set_status("pending")
-        elif key in (ord("i"),):
+        elif key in (ord("I"),):
             # in_progress
             self._set_status("in_progress")
-        elif key in (ord("d"),):
+        elif key in (ord("D"),):
             # done
             self._set_status("done")
-        elif key in (ord("x"),):
+        elif key in (ord("X"),):
             # archive tree
             self._toggle_archive_tree(archive=True)
-        elif key in (ord("u"),):
+        elif key in (ord("U"),):
             # unarchive tree
             self._toggle_archive_tree(archive=False)
 
         # scroll keys
         elif key in (ord("["),):
-            self._scroll_detail(-1)
+            self.view.scroll_detail(-1)
         elif key in (ord("]"),):
-            self._scroll_detail(+1)
+            self.view.scroll_detail(+1)
 
         # dialog keys
         elif key in (ord("A"),):
@@ -1477,21 +889,5 @@ class App:
         elif key in (ord("G"),):
             # graph overlay
             self._start_graph_overlay()
+
         return True
-
-
-def main(stdscr: curses.window, args: argparse.Namespace | None = None) -> int:
-    app = App(stdscr, args)
-    while True:
-        app.draw()
-        key_raw = stdscr.get_wch()
-        key = ord(key_raw) if isinstance(key_raw, str) else key_raw
-        ch = key_raw if isinstance(key_raw, str) else None
-        cont = app.handle_key(key, ch)
-        if not cont:
-            break
-    return 0
-
-
-def run(args: argparse.Namespace | None = None) -> int:
-    return curses.wrapper(main, args)

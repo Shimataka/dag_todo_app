@@ -11,6 +11,7 @@ class Task:
     description: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
+    done_at: str | None = None
     due_date: str | None = None
     start_date: str | None = None
     priority: int | None = None

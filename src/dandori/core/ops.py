@@ -244,6 +244,10 @@ def set_status(task_id: str, status: Status) -> Task:
         raise OpsError(_msg)
     t: Task = _task.unwrap()
     t.status = status
+    if status == "done":
+        t.done_at = now_iso()
+    if t.status == "done" and status != "done":
+        t.done_at = None
     t.updated_at = now_iso()
 
     st.commit()

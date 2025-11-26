@@ -396,9 +396,16 @@ class AppView:
         if t.tags:
             base.append("Tags      : " + ", ".join(t.tags))
         if t.depends_on:
-            base.append("Depends on: " + ", ".join(t.depends_on))
+            base.append(
+                "Depends on: " + ", ".join([s[:LENGTH_SHORTEND_ID] for s in t.depends_on]),
+            )
         if t.children:
-            base.append("Children  : " + ", ".join(t.children))
+            base.append(
+                "Children  : "
+                + ", ".join(
+                    [s[:LENGTH_SHORTEND_ID] for s in t.children],
+                ),
+            )
         if t.description:
             base.append(f"Description   : {t.description}")
 

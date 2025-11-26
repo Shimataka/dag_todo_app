@@ -52,9 +52,9 @@ def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
     not_completed = ("pending", "requested", "in_progress")
     if task.status not in not_completed:
         return False
-    tid = task.id
-    for child in all_tasks.values():
-        if tid in child.depends_on and child.status in not_completed and not child.is_archived:
+    for child_id in task.children:
+        child = all_tasks.get(child_id)
+        if child and child.status in not_completed and not child.is_archived:
             return True
     return False
 

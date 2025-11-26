@@ -244,7 +244,6 @@ def set_status(task_id: str, status: Status) -> Task:
         _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _task.unwrap()
-    t.status = status
 
     # in-progress --> start_at を now に設定
     if status == "in_progress" and t.status in ("pending", None):
@@ -259,6 +258,7 @@ def set_status(task_id: str, status: Status) -> Task:
     if t.status == "done" and status != "done":
         t.done_at = None
 
+    t.status = status
     t.updated_at = now_iso()
 
     st.commit()

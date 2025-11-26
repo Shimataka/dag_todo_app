@@ -355,7 +355,7 @@ class AppView:
                 start_idx += width
                 row += 1
 
-    def _build_detail_lines(  # noqa: C901
+    def _build_detail_lines(
         self,
         t: Task,
         width: int,
@@ -379,35 +379,24 @@ class AppView:
             status += " (archived)"
         base.append(f"Status  : {status}")
         base.append(f"Priority: {t.priority}")
-        if t.start_at:
-            base.append(f"Start   : {t.start_at}")
-        if t.due_date:
-            base.append(f"Due     : {t.due_date}")
-        if t.done_at:
-            base.append(f"Done    : {t.done_at}")
-        if t.requested_at:
-            base.append(f"Requested at  : {t.requested_at}")
-        if t.requested_by:
-            base.append(f"Requested by  : {t.requested_by}")
-        if t.requested_note:
-            base.append(f"Requested note: {t.requested_note}")
-        if t.assigned_to:
-            base.append(f"Assigned to   : {t.assigned_to}")
-        if t.tags:
-            base.append("Tags      : " + ", ".join(t.tags))
-        if t.depends_on:
-            base.append(
-                "Depends on: " + ", ".join([s[:LENGTH_SHORTEND_ID] for s in t.depends_on]),
-            )
-        if t.children:
-            base.append(
-                "Children  : "
-                + ", ".join(
-                    [s[:LENGTH_SHORTEND_ID] for s in t.children],
-                ),
-            )
-        if t.description:
-            base.append(f"Description   : {t.description}")
+        base.append(f"Start   : {t.start_at or ''}")
+        base.append(f"Due     : {t.due_date or ''}")
+        base.append(f"Done    : {t.done_at or ''}")
+        base.append(f"REQ at  : {t.requested_at or ''}")
+        base.append(f"REQ by  : {t.requested_by or ''}")
+        base.append(f"REQ note: {t.requested_note or ''}")
+        base.append(f"Assgn to: {t.assigned_to or ''}")
+        base.append("Tags    : " + ", ".join(t.tags))
+        base.append(
+            "Parents : " + ", ".join([s[:LENGTH_SHORTEND_ID] for s in t.depends_on]),
+        )
+        base.append(
+            "Children: "
+            + ", ".join(
+                [s[:LENGTH_SHORTEND_ID] for s in t.children],
+            ),
+        )
+        base.append(f"DESC    : {t.description}")
 
         # wrap lines
         visual: list[str] = []

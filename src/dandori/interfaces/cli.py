@@ -84,7 +84,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             bottleneck_only=args.bottleneck,
             component_of=parse_id_with_msg(
                 args.component,
-                source_ids=[t.id for t in list_tasks()],
+                source_ids=[t.id for t in list_tasks(archived=None)],
             )
             if args.component
             else None,

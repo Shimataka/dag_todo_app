@@ -35,7 +35,7 @@ class Task:
     def from_dict(d: dict[str, Any]) -> "Task":
         try:
             return Task(**d)
-        except Exception:  # noqa: BLE001
+        except TypeError:
             # compensate for the lack of required fields
             d["id"] = d.get("id") or gen_task_id("system")
             d["owner"] = d.get("owner") or "system"

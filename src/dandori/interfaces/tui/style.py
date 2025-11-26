@@ -71,15 +71,18 @@ class HeaderLines:
         bottleneck_label: str,
         component_label: str,
     ) -> str:
-        status_line = "List: "
-        status_line += f"[(f/F)ilter: {status_label}] "
-        status_line += f"[(a)rchived: {archived_label}] "
-        status_line += f"[(t)opo: {topo_label}] "
-        status_line += f"[(r)equested: {req_label}] "
-        status_line += f"[(y)ready: {ready_label}] "
-        status_line += f"[(b)ottleneck: {bottleneck_label}] "
-        status_line += f"[(c)omponent: {component_label}]"
-        return status_line
+        return "".join(
+            [
+                "List: ",
+                f"[(f/F)ilter: {status_label}] ",
+                f"[(a)rchived: {archived_label}] ",
+                f"[(t)opo: {topo_label}] ",
+                f"[(r)equested: {req_label}] ",
+                f"[(y)ready: {ready_label}] ",
+                f"[(b)ottleneck: {bottleneck_label}] ",
+                f"[(c)omponent: {component_label}]",
+            ],
+        )
 
     @classmethod
     def _help_line(cls) -> str:

@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from dandori.util.ids import gen_task_id
 from dandori.util.time import now_iso
 
 
@@ -32,4 +33,11 @@ class Task:
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "Task":
-        return Task(**d)
+        try:
+            return Task(**d)
+        except Exception:  # noqa: BLE001
+            # compensate for the lack of required fields
+            d["id"] = d.get("id") or gen_task_id("system")
+            d["owner"] = d.get("owner") or "system"
+            d["title"] = d.get("title") or "temporary title (lack of required fields)"
+            return Task(**d)

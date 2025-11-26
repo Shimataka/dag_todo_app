@@ -19,7 +19,7 @@ from dandori.core.ops import (
     update_task,
 )
 from dandori.core.validate import detect_cycles, detect_inconsistencies
-from dandori.interfaces import tui
+from dandori.interfaces import LENGTH_SHORTEND_ID, tui
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
 from dandori.storage import Store, StoreToYAML
@@ -82,7 +82,10 @@ def cmd_list(args: argparse.Namespace) -> int:
             topo=args.topo,
             ready_only=args.ready,
             bottleneck_only=args.bottleneck,
-            component_of=args.component,
+            component_of=parse_id_with_msg(
+                args.component,
+                source_ids=[t.id for t in list_tasks()],
+            ),
         )
 
         # query フィルタ(ops.list_tasks にはないので後でフィルタ)
@@ -91,6 +94,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             tasks = [t for t in tasks if q in t.title.lower() or q in (t.description or "").lower()]
 
         for t in tasks:
+            _id = t.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
             if args.details:
                 print_task(t)
                 print("-" * 76)
@@ -110,7 +114,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
             sla = format_requested_sla(t)
             extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
-            print(f"{tag} {t.id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
+            print(f"{tag} {_id} | p={t.priority} | {t.status}{assigned}{extra} | {t.title}")
 
     except OpsError as e:
         _msg = f"An error occurred while listing tasks: {e!s}"

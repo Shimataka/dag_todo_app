@@ -3,13 +3,13 @@ import locale
 from dataclasses import dataclass
 
 from dandori.core.models import Task
+from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState
 from dandori.interfaces.tui.helper import _string_width
 from dandori.interfaces.tui.style import (
     ADD_TASK_COLOR,
     COMPLETED_COLOR,
     DIALOG_BG_COLOR,
-    LENGTH_SHORTEND_ID,
     MAIN_THEME_COLOR,
     MAX_DIALOG_BOX_WIDTH,
     MAX_OVERLAY_BOX_WIDTH,

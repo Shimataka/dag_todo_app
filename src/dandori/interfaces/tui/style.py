@@ -21,8 +21,6 @@ OVERLAY_BG_COLOR = 9
 MAX_DIALOG_BOX_WIDTH = 80
 MAX_OVERLAY_BOX_WIDTH = 100
 
-LENGTH_SHORTEND_ID = 8
-
 
 class HeaderLines:
     """Header lines for the TUI."""
@@ -78,8 +76,8 @@ class HeaderLines:
         status_line += f"[(a)rchived: {archived_label}] "
         status_line += f"[(t)opo: {topo_label}] "
         status_line += f"[(r)equested: {req_label}] "
-        status_line += f"[(y)ready: {ready_label}]"
-        status_line += f"[(b)ottleneck: {bottleneck_label}]"
+        status_line += f"[(y)ready: {ready_label}] "
+        status_line += f"[(b)ottleneck: {bottleneck_label}] "
         status_line += f"[(c)omponent: {component_label}]"
         return status_line
 

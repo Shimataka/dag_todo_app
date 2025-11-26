@@ -18,8 +18,8 @@ from dandori.core.ops import (
     unarchive_tree,
     update_task,
 )
+from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState, DialogState, FieldState, OverlayState
-from dandori.interfaces.tui.style import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.view import AppView
 from dandori.util.ids import parse_ids_with_msg
 from dandori.util.logger import setup_logger

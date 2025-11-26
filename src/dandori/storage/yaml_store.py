@@ -479,15 +479,15 @@ class StoreToYAML(Store):
         """
         match rollback_fn():
             case Ok(None):
-                logger.exception(error_message)
+                logger.error(error_message)
                 return Err[None, str](error_message)
             case Err(ee):
                 _msg = f"{error_message} (and rollback failed: {ee})"
-                logger.exception(_msg)
+                logger.error(_msg)
                 return Err[None, str](_msg)
             case _:
                 _msg = f"{error_message} (and rollback failed: Unexpected error)"
-                logger.exception(_msg)
+                logger.error(_msg)
                 return Err[None, str](_msg)
 
     # ---- 循環検出 ----

@@ -85,7 +85,9 @@ def cmd_list(args: argparse.Namespace) -> int:
             component_of=parse_id_with_msg(
                 args.component,
                 source_ids=[t.id for t in list_tasks()],
-            ),
+            )
+            if args.component
+            else None,
         )
 
         # query フィルタ(ops.list_tasks にはないので後でフィルタ)

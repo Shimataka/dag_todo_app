@@ -18,7 +18,6 @@ def parse_id(
     s: str,
     *,
     source_ids: list[str],
-    shortend_length: int | None = None,
 ) -> Result[str, str]:
     s = s.strip()
     if len(s) == 0:
@@ -27,10 +26,7 @@ def parse_id(
     candidates = [tid for tid in source_ids if tid == s]
     # LENGTH_SHORTEND_ID-chars prefix search
     if len(candidates) == 0:
-        if shortend_length is None:
-            pass
-        elif len(s) == shortend_length:
-            candidates = [tid for tid in source_ids if tid[:shortend_length] == s]
+        candidates = [tid for tid in source_ids if tid.startswith(s)]
     # match only one
     if len(candidates) == 1:
         return Ok(candidates[0])
@@ -47,14 +43,12 @@ def parse_ids(
     *,
     source_ids: list[str],
     sep: str = ",",
-    shortend_length: int | None = None,
 ) -> Result[list[str], str]:
     ids: list[str] = []
     for s_shortend in s.split(sep):
         match parse_id(
             s_shortend,
             source_ids=source_ids,
-            shortend_length=shortend_length,
         ):
             case Ok(tid):
                 ids.append(tid)
@@ -67,7 +61,6 @@ def parse_id_with_msg(
     s: str | None,
     *,
     source_ids: list[str],
-    shortend_length: int | None = None,
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> str:
@@ -76,7 +69,6 @@ def parse_id_with_msg(
     match parse_id(
         s,
         source_ids=source_ids,
-        shortend_length=shortend_length,
     ):
         case Ok(tid):
             return tid  # type: ignore[no-any-return]
@@ -100,7 +92,6 @@ def parse_ids_with_msg(
     *,
     source_ids: list[str],
     sep: str = ",",
-    shortend_length: int | None = None,
     msg_buffer: str | None = None,
     can_raise: bool = True,
 ) -> list[str]:
@@ -110,7 +101,6 @@ def parse_ids_with_msg(
         s,
         source_ids=source_ids,
         sep=sep,
-        shortend_length=shortend_length,
     ):
         case Ok(ids):
             return ids  # type: ignore[no-any-return]

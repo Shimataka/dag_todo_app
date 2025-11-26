@@ -34,15 +34,43 @@ def _get_store() -> Store:
     return StoreToYAML()
 
 
+def _is_ready(task: Task, all_tasks: dict[str, Task]) -> bool:
+    not_completed = ("pending", "requested", "in_progress")
+    completed = ("done", "removed")
+    if task.is_archived:
+        return False
+    if task.status not in not_completed:
+        return False
+    for pid in task.depends_on:
+        parent = all_tasks.get(pid)
+        if parent is None or ((parent.status not in completed) and not parent.is_archived):
+            return False
+    return True
+
+
+def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
+    not_completed = ("pending", "requested", "in_progress")
+    if task.status not in not_completed:
+        return False
+    for child_id in task.children:
+        child = all_tasks.get(child_id)
+        if child and child.status in not_completed and not child.is_archived:
+            return True
+    return False
+
+
 # ---- 一覧取得 / 個別取得 ----------------------------------------------------
 
 
-def list_tasks(
+def list_tasks(  # noqa: C901
     status: Status | None = None,
     *,
     archived: bool | None = False,
     topo: bool = False,
     requested_only: bool = False,
+    ready_only: bool = False,
+    bottleneck_only: bool = False,
+    component_of: str | None = None,
 ) -> list[Task]:
     """タスク一覧を取得するユースケース。
 
@@ -51,7 +79,21 @@ def list_tasks(
     """
     st = _get_store()
     st.load()
-    all_tasks = list[Task](st.get_all_tasks().unwrap_or(default={}).values())
+
+    # component_of で弱連結成分をフィルタ
+    component_ids: set[str] | None = None
+    if component_of is not None:
+        match st.weakly_connected_component(component_of):
+            case Ok(component):
+                component_ids = {t.id for t in component}
+            case Err(e):
+                raise OpsError(e)
+            case _:
+                _msg = "Unexpected error"
+                raise OpsError(_msg)
+
+    all_tasks_dict = st.get_all_tasks().unwrap_or(default={})
+    all_tasks = list[Task](all_tasks_dict.values())
 
     # archived フラグでフィルタ
     if archived is not None:
@@ -64,6 +106,18 @@ def list_tasks(
     # requested_only でフィルタ
     if requested_only:
         all_tasks = [t for t in all_tasks if t.status == "requested"]
+
+    # ready_only でフィルタ
+    if ready_only:
+        all_tasks = [t for t in all_tasks if _is_ready(t, all_tasks_dict)]
+
+    # bottleneck_only でフィルタ
+    if bottleneck_only:
+        all_tasks = [t for t in all_tasks if _is_bottleneck(t, all_tasks_dict)]
+
+    # component_ids でフィルタ
+    if component_ids is not None:
+        all_tasks = [t for t in all_tasks if t.id in component_ids]
 
     # ソート
     if topo:  # noqa: SIM108

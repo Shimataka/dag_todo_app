@@ -3,13 +3,13 @@ import locale
 from dataclasses import dataclass
 
 from dandori.core.models import Task
+from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState
 from dandori.interfaces.tui.helper import _string_width
 from dandori.interfaces.tui.style import (
     ADD_TASK_COLOR,
     COMPLETED_COLOR,
     DIALOG_BG_COLOR,
-    LENGTH_SHORTEND_ID,
     MAIN_THEME_COLOR,
     MAX_DIALOG_BOX_WIDTH,
     MAX_OVERLAY_BOX_WIDTH,
@@ -171,11 +171,32 @@ class AppView:
         # requested only表示
         req_label = "on" if f.requested_only else "off"
 
+        # ready only表示
+        ready_label = "on" if f.ready_only else "off"
+
         # topo表示
         topo_label = "on" if f.topo else "off"
 
+        # bottleneck only表示
+        bottleneck_label = "on" if f.bottleneck_only else "off"
+
+        # component表示
+        component_label = (
+            "all"
+            if f.component_task_id is None
+            else f.component_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
+        )
+
         title = HeaderLines.title()
-        status = HeaderLines.status(status_label, archived_label, topo_label, req_label)
+        status = HeaderLines.status(
+            status_label,
+            archived_label,
+            topo_label,
+            req_label,
+            ready_label,
+            bottleneck_label,
+            component_label,
+        )
         helps = HeaderLines.help()
 
         if curses.has_colors():

@@ -82,6 +82,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             topo=args.topo,
             ready_only=args.ready,
             bottleneck_only=args.bottleneck,
+            component_of=args.component,
         )
 
         # query フィルタ(ops.list_tasks にはないので後でフィルタ)
@@ -500,6 +501,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--topo-mode", choices=["eager", "strict"], default="eager")
     sp.add_argument("--ready", action="store_true", help="show ready tasks only")
     sp.add_argument("--bottleneck", action="store_true", help="show bottleneck tasks only")
+    sp.add_argument("--component", help="show tasks in component containing ID")
     sp.set_defaults(func=cmd_list)
 
     # show

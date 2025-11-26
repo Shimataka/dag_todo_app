@@ -62,7 +62,7 @@ def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
 # ---- 一覧取得 / 個別取得 ----------------------------------------------------
 
 
-def list_tasks(
+def list_tasks(  # noqa: C901
     status: Status | None = None,
     *,
     archived: bool | None = False,
@@ -70,6 +70,7 @@ def list_tasks(
     requested_only: bool = False,
     ready_only: bool = False,
     bottleneck_only: bool = False,
+    component_of: str | None = None,
 ) -> list[Task]:
     """タスク一覧を取得するユースケース。
 
@@ -78,6 +79,19 @@ def list_tasks(
     """
     st = _get_store()
     st.load()
+
+    # component_of で弱連結成分をフィルタ
+    component_ids: set[str] | None = None
+    if component_of is not None:
+        match st.weakly_connected_component(component_of):
+            case Ok(component):
+                component_ids = {t.id for t in component}
+            case Err(e):
+                raise OpsError(e)
+            case _:
+                _msg = "Unexpected error"
+                raise OpsError(_msg)
+
     all_tasks_dict = st.get_all_tasks().unwrap_or(default={})
     all_tasks = list[Task](all_tasks_dict.values())
 
@@ -100,6 +114,10 @@ def list_tasks(
     # bottleneck_only でフィルタ
     if bottleneck_only:
         all_tasks = [t for t in all_tasks if _is_bottleneck(t, all_tasks_dict)]
+
+    # component_ids でフィルタ
+    if component_ids is not None:
+        all_tasks = [t for t in all_tasks if t.id in component_ids]
 
     # ソート
     if topo:  # noqa: SIM108

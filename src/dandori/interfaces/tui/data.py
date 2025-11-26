@@ -31,6 +31,7 @@ class FilterState:
     topo: bool = False  # トポロジカルソート表示フラグ
     ready_only: bool = False  # ready タスクのみ表示フラグ
     bottleneck_only: bool = False  # bottleneck タスクのみ表示フラグ
+    component_task_id: str | None = None  # 弱連結成分フィルタのタスクID
     tags: list[str] = field(default_factory=list)  # タグフィルタ
 
 

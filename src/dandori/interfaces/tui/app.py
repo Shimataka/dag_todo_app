@@ -148,6 +148,7 @@ class App:
             requested_only=self.state.filter.requested_only,
             ready_only=self.state.filter.ready_only,
             bottleneck_only=self.state.filter.bottleneck_only,
+            component_of=self.state.filter.component_task_id,
         )
 
         # clamp / restore selection index
@@ -808,6 +809,22 @@ class App:
         self.state.msg_footer = f"Filter: bottleneck_only={label}"
         self._reload_tasks()
 
+    def _toggle_component_filter(self) -> None:
+        """Toggle component filter."""
+        f = self.state.filter
+        if f.component_task_id is None:
+            task = self.view.current_task()
+            if task is None:
+                self.state.msg_footer = "No task selected"
+                return
+            f.component_task_id = task.id
+            short_id = task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
+            self.state.msg_footer = f"Filter: component={short_id}"
+        else:
+            f.component_task_id = None
+            self.state.msg_footer = "Filter: component=all"
+        self._reload_tasks()
+
     def handle_key(self, key: int, ch: str | None = None) -> bool:  # noqa: C901
         # in dialog
         if self.state.mode == "dialog" and self.state.dialog is not None:
@@ -873,6 +890,9 @@ class App:
         elif key in (ord("b"),):
             # bottleneck_only toggle
             self._toggle_bottleneck_only_filter()
+        elif key in (ord("c"),):
+            # component task ID toggle
+            self._toggle_component_filter()
 
         # change status
         elif key in (ord("P"),):

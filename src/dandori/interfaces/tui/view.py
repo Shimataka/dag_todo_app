@@ -180,6 +180,13 @@ class AppView:
         # bottleneck only表示
         bottleneck_label = "on" if f.bottleneck_only else "off"
 
+        # component表示
+        component_label = (
+            "all"
+            if f.component_task_id is None
+            else f.component_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
+        )
+
         title = HeaderLines.title()
         status = HeaderLines.status(
             status_label,
@@ -188,6 +195,7 @@ class AppView:
             req_label,
             ready_label,
             bottleneck_label,
+            component_label,
         )
         helps = HeaderLines.help()
 

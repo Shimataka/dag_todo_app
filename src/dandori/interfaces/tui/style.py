@@ -46,6 +46,7 @@ class HeaderLines:
         req_label: str,
         ready_label: str,
         bottleneck_label: str,
+        component_label: str,
     ) -> str:
         return cls._status_line(
             status_label,
@@ -54,6 +55,7 @@ class HeaderLines:
             req_label,
             ready_label,
             bottleneck_label,
+            component_label,
         )
 
     @classmethod
@@ -69,6 +71,7 @@ class HeaderLines:
         req_label: str,
         ready_label: str,
         bottleneck_label: str,
+        component_label: str,
     ) -> str:
         status_line = "List: "
         status_line += f"[(f/F)ilter: {status_label}] "
@@ -77,6 +80,7 @@ class HeaderLines:
         status_line += f"[(r)equested: {req_label}] "
         status_line += f"[(y)ready: {ready_label}]"
         status_line += f"[(b)ottleneck: {bottleneck_label}]"
+        status_line += f"[(c)omponent: {component_label}]"
         return status_line
 
     @classmethod

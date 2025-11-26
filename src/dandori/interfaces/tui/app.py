@@ -836,6 +836,7 @@ class App:
             self.state.detail_offset = 0
 
         # shortcut keys
+
         # change sort order of filter
         elif key in (ord("f"),):
             # status filter cycle

@@ -34,6 +34,31 @@ def _get_store() -> Store:
     return StoreToYAML()
 
 
+def _is_ready(task: Task, all_tasks: dict[str, Task]) -> bool:
+    not_completed = ("pending", "requested", "in_progress")
+    completed = ("done", "removed")
+    if task.is_archived:
+        return False
+    if task.status not in not_completed:
+        return False
+    for pid in task.depends_on:
+        parent = all_tasks.get(pid)
+        if parent is None or ((parent.status not in completed) and not parent.is_archived):
+            return False
+    return True
+
+
+def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
+    not_completed = ("pending", "requested", "in_progress")
+    if task.status not in not_completed:
+        return False
+    tid = task.id
+    for child in all_tasks.values():
+        if tid in child.depends_on and child.status in not_completed and not child.is_archived:
+            return True
+    return False
+
+
 # ---- 一覧取得 / 個別取得 ----------------------------------------------------
 
 
@@ -43,6 +68,8 @@ def list_tasks(
     archived: bool | None = False,
     topo: bool = False,
     requested_only: bool = False,
+    ready_only: bool = False,
+    bottleneck_only: bool = False,
 ) -> list[Task]:
     """タスク一覧を取得するユースケース。
 
@@ -51,7 +78,8 @@ def list_tasks(
     """
     st = _get_store()
     st.load()
-    all_tasks = list[Task](st.get_all_tasks().unwrap_or(default={}).values())
+    all_tasks_dict = st.get_all_tasks().unwrap_or(default={})
+    all_tasks = list[Task](all_tasks_dict.values())
 
     # archived フラグでフィルタ
     if archived is not None:
@@ -64,6 +92,14 @@ def list_tasks(
     # requested_only でフィルタ
     if requested_only:
         all_tasks = [t for t in all_tasks if t.status == "requested"]
+
+    # ready_only でフィルタ
+    if ready_only:
+        all_tasks = [t for t in all_tasks if _is_ready(t, all_tasks_dict)]
+
+    # bottleneck_only でフィルタ
+    if bottleneck_only:
+        all_tasks = [t for t in all_tasks if _is_bottleneck(t, all_tasks_dict)]
 
     # ソート
     if topo:  # noqa: SIM108

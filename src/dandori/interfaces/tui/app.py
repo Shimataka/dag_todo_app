@@ -146,6 +146,8 @@ class App:
             archived=self.state.filter.archived,
             topo=self.state.filter.topo,
             requested_only=self.state.filter.requested_only,
+            ready_only=self.state.filter.ready_only,
+            bottleneck_only=self.state.filter.bottleneck_only,
         )
 
         # clamp / restore selection index
@@ -789,7 +791,21 @@ class App:
         """Toggle topo ordering."""
         self.state.filter.topo = not self.state.filter.topo
         label = "on" if self.state.filter.topo else "off"
-        self.state.msg_footer = f"Topo={label}"
+        self.state.msg_footer = f"Topological sort: {label}"
+        self._reload_tasks()
+
+    def _toggle_ready_only_filter(self) -> None:
+        """Toggle ready_only filter."""
+        self.state.filter.ready_only = not self.state.filter.ready_only
+        label = "on" if self.state.filter.ready_only else "off"
+        self.state.msg_footer = f"Filter: ready_only={label}"
+        self._reload_tasks()
+
+    def _toggle_bottleneck_only_filter(self) -> None:
+        """Toggle bottleneck_only filter."""
+        self.state.filter.bottleneck_only = not self.state.filter.bottleneck_only
+        label = "on" if self.state.filter.bottleneck_only else "off"
+        self.state.msg_footer = f"Filter: bottleneck_only={label}"
         self._reload_tasks()
 
     def handle_key(self, key: int, ch: str | None = None) -> bool:  # noqa: C901
@@ -848,9 +864,15 @@ class App:
         elif key in (ord("r"),):
             # requested_only toggle
             self._toggle_requested_only_filter()
+        elif key in (ord("y"),):
+            # ready_only toggle
+            self._toggle_ready_only_filter()
         elif key in (ord("t"),):
             # topo on/off
             self._toggle_topo()
+        elif key in (ord("b"),):
+            # bottleneck_only toggle
+            self._toggle_bottleneck_only_filter()
 
         # change status
         elif key in (ord("P"),):

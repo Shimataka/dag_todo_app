@@ -171,11 +171,24 @@ class AppView:
         # requested only表示
         req_label = "on" if f.requested_only else "off"
 
+        # ready only表示
+        ready_label = "on" if f.ready_only else "off"
+
         # topo表示
         topo_label = "on" if f.topo else "off"
 
+        # bottleneck only表示
+        bottleneck_label = "on" if f.bottleneck_only else "off"
+
         title = HeaderLines.title()
-        status = HeaderLines.status(status_label, archived_label, topo_label, req_label)
+        status = HeaderLines.status(
+            status_label,
+            archived_label,
+            topo_label,
+            req_label,
+            ready_label,
+            bottleneck_label,
+        )
         helps = HeaderLines.help()
 
         if curses.has_colors():

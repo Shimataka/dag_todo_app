@@ -33,7 +33,9 @@ class HeaderLines:
 
     @classmethod
     def title(cls) -> str:
-        return "--- dandori (TUI) > Topological graph TODO task manager ---"
+        _title = "--- dandori (TUI) > Topological graph TODO task manager ---"
+        _title += " [↑/↓ Move, [/] Scroll] [(q)uit]"
+        return _title
 
     @classmethod
     def status(
@@ -42,8 +44,17 @@ class HeaderLines:
         archived_label: str,
         topo_label: str,
         req_label: str,
+        ready_label: str,
+        bottleneck_label: str,
     ) -> str:
-        return cls._status_line(status_label, archived_label, topo_label, req_label)
+        return cls._status_line(
+            status_label,
+            archived_label,
+            topo_label,
+            req_label,
+            ready_label,
+            bottleneck_label,
+        )
 
     @classmethod
     def help(cls) -> str:
@@ -56,14 +67,28 @@ class HeaderLines:
         archived_label: str,
         topo_label: str,
         req_label: str,
+        ready_label: str,
+        bottleneck_label: str,
     ) -> str:
-        status_line = "List: [↑/↓ Move, [/] Scroll] [(q)uit] "
-        status_line += f"[(f/F)ilter: {status_label}] [(a)rchived: {archived_label}] "
-        status_line += f"[(t)opo: {topo_label}] [(r)equested: {req_label}]"
+        status_line = "List: "
+        status_line += f"[(f/F)ilter: {status_label}] "
+        status_line += f"[(a)rchived: {archived_label}] "
+        status_line += f"[(t)opo: {topo_label}] "
+        status_line += f"[(r)equested: {req_label}] "
+        status_line += f"[(y)ready: {ready_label}]"
+        status_line += f"[(b)ottleneck: {bottleneck_label}]"
         return status_line
 
     @classmethod
     def _help_line(cls) -> str:
-        help_line = "Task: [(A)dd] [(E)dit] [(R)equest] [(G)raph] "
-        help_line += "[(P)end] [(I)n_progress] [(D)one] [(X)Archive] [(U)narchive]"
+        help_line = "Task: "
+        help_line += "[(A)dd] "
+        help_line += "[(E)dit] "
+        help_line += "[(R)equest] "
+        help_line += "[(G)raph] "
+        help_line += "[(P)end] "
+        help_line += "[(I)n_progress] "
+        help_line += "[(D)one] "
+        help_line += "[(X)archive] "
+        help_line += "[(U)narchive]"
         return help_line

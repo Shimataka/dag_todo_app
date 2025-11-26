@@ -80,6 +80,8 @@ def cmd_list(args: argparse.Namespace) -> int:
             status=args.status,  # type: ignore[arg-type]
             archived=args.archived,
             topo=args.topo,
+            ready_only=args.ready,
+            bottleneck_only=args.bottleneck,
         )
 
         # query フィルタ(ops.list_tasks にはないので後でフィルタ)
@@ -496,6 +498,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--details", action="store_true", help="show detailed information")
     sp.add_argument("--topo", action="store_true", help="topological order")
     sp.add_argument("--topo-mode", choices=["eager", "strict"], default="eager")
+    sp.add_argument("--ready", action="store_true", help="show ready tasks only")
+    sp.add_argument("--bottleneck", action="store_true", help="show bottleneck tasks only")
     sp.set_defaults(func=cmd_list)
 
     # show

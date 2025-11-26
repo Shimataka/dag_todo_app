@@ -247,7 +247,7 @@ def set_status(task_id: str, status: Status) -> Task:
     t.status = status
 
     # in-progress --> start_at を now に設定
-    if status == "in_progress" and t.start_at in ("pending", None):
+    if status == "in_progress" and t.status in ("pending", None):
         t.start_at = now_iso()
     # pending --> start_at を None に設定
     if status == "pending":

@@ -10,7 +10,7 @@ from dandori.storage.base import Store
 from dandori.util.logger import setup_logger
 from dandori.util.time import now_iso
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 
 class StoreToYAML(Store):
@@ -23,6 +23,7 @@ class StoreToYAML(Store):
 
     def load(self) -> None:
         _path = Path(self.data_path)
+        _tasks: dict[str, Task] = {}
         if _path.exists():
             with _path.open(encoding="utf-8") as f:
                 try:
@@ -30,13 +31,21 @@ class StoreToYAML(Store):
                 except yaml.YAMLError as e:
                     _msg = f"Failed to load YAML file: {e}"
                     logger.exception(_msg)
+                    # Initialize empty tasks if error occurs
+                    self._tasks = {}
+                    self._tmp_tasks = {}
                     return
                 for tid, td in raw.get("tasks", {}).items():
-                    self.tasks[tid] = Task.from_dict(td)
+                    _tasks[tid] = Task.from_dict(td)
         else:
-            self.tasks = {}
+            _tasks = {}
+
+        # treat read content as commited state, and copy the tasks to the internal state
+        self._tasks = copy.deepcopy(_tasks)
+        self._tmp_tasks = copy.deepcopy(_tasks)
 
     def save(self) -> None:
+        # save the internal state (tasks) to the file
         raw = {"tasks": {tid: t.to_dict() for tid, t in self.tasks.items()}}
         _path = Path(self.data_path)
         with _path.open("w", encoding="utf-8") as f:
@@ -458,18 +467,27 @@ class StoreToYAML(Store):
         error_message: str,
         rollback_fn: Callable[[], Result[None, str]],
     ) -> Result[None, str]:
+        """Rollback on error.
+
+        Args:
+            error_message: The error message.
+            rollback_fn: The rollback function.
+
+        Returns:
+            Ok(None): Success.
+            Err(str): Error.
+        """
         match rollback_fn():
             case Ok(None):
-                _msg = f"Rollback failed (on {error_message})"
-                logger.exception(_msg)
-                return Err[None, str](_msg)
+                logger.error(error_message)
+                return Err[None, str](error_message)
             case Err(ee):
-                _msg = f"Rollback failed (on {error_message}):\n{ee}"
-                logger.exception(_msg)
+                _msg = f"{error_message} (and rollback failed: {ee})"
+                logger.error(_msg)
                 return Err[None, str](_msg)
             case _:
-                _msg = "Unexpected error"
-                logger.exception(_msg)
+                _msg = f"{error_message} (and rollback failed: Unexpected error)"
+                logger.error(_msg)
                 return Err[None, str](_msg)
 
     # ---- 循環検出 ----

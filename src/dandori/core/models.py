@@ -1,18 +1,21 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from dandori.util.ids import gen_task_id
 from dandori.util.time import now_iso
 
 
 @dataclass
 class Task:
     id: str
+    owner: str
     title: str
     description: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
+    done_at: str | None = None
     due_date: str | None = None
-    start_date: str | None = None
+    start_at: str | None = None
     priority: int | None = None
     status: Literal["pending", "in_progress", "done", "requested", "removed"] = "pending"
     depends_on: list[str] = field(default_factory=list)  # 複数親OK
@@ -30,4 +33,11 @@ class Task:
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "Task":
-        return Task(**d)
+        try:
+            return Task(**d)
+        except TypeError:
+            # compensate for the lack of required fields
+            d["id"] = d.get("id") or gen_task_id("system")
+            d["owner"] = d.get("owner") or "system"
+            d["title"] = d.get("title") or "temporary title (lack of required fields)"
+            return Task(**d)

@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,8 @@ class TestStoreBasic(unittest.TestCase):
 
     def setUp(self) -> None:
         """各テストの前に一時ファイルを作成"""
+        self.original_username = os.environ.get("DD_USERNAME")
+        os.environ["DD_USERNAME"] = "test_user"
         self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")  # noqa: SIM115
         self.temp_file.close()
         self.store = StoreToYAML(data_path=self.temp_file.name)
@@ -19,6 +22,10 @@ class TestStoreBasic(unittest.TestCase):
     def tearDown(self) -> None:
         """各テストの後に一時ファイルを削除"""
         Path(self.temp_file.name).unlink(missing_ok=True)
+        if self.original_username is not None:
+            os.environ["DD_USERNAME"] = self.original_username
+        elif "DD_USERNAME" in os.environ:
+            del os.environ["DD_USERNAME"]
 
     def test_add_list_show_flow(self) -> None:
         """Add → list → show の一連の流れをテスト"""
@@ -28,6 +35,7 @@ class TestStoreBasic(unittest.TestCase):
             title="テストタスク",
             description="これはテストです",
             priority=2,
+            owner="test_user",
         )
         result = self.store.add_task(task)
         assert result.is_ok()
@@ -51,11 +59,11 @@ class TestStoreBasic(unittest.TestCase):
 
     def test_add_duplicate_id_fails(self) -> None:
         """同じIDでタスクを追加しようとするとエラーになる"""
-        task1 = Task(id="duplicate_id", title="最初のタスク")
+        task1 = Task(id="duplicate_id", title="最初のタスク", owner="test_user")
         result1 = self.store.add_task(task1)
         assert result1.is_ok()
 
-        task2 = Task(id="duplicate_id", title="重複タスク")
+        task2 = Task(id="duplicate_id", title="重複タスク", owner="test_user")
         result2 = self.store.add_task(task2)
         assert result2.is_err()
         assert "already exists" in result2.unwrap_err()

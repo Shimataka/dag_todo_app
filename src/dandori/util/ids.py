@@ -6,7 +6,7 @@ from pyresults import Err, Ok, Result
 from dandori.util.logger import setup_logger
 from dandori.util.time import JST
 
-logger = setup_logger(__name__, is_stream=True, is_file=True)
+logger = setup_logger("dandori", is_stream=True, is_file=True)
 
 
 def gen_task_id(username: str) -> str:
@@ -24,9 +24,9 @@ def parse_id(
         return Err("Empty ID")
     # full ID search
     candidates = [tid for tid in source_ids if tid == s]
-    # 6-chars prefix search
-    if len(candidates) == 0 and len(s) == 6:
-        candidates = [tid for tid in source_ids if tid[:6] == s]
+    # LENGTH_SHORTEND_ID-chars prefix search
+    if len(candidates) == 0:
+        candidates = [tid for tid in source_ids if tid.startswith(s)]
     # match only one
     if len(candidates) == 1:
         return Ok(candidates[0])
@@ -45,8 +45,11 @@ def parse_ids(
     sep: str = ",",
 ) -> Result[list[str], str]:
     ids: list[str] = []
-    for s6 in s.split(sep):
-        match parse_id(s6, source_ids=source_ids):
+    for s_shortend in s.split(sep):
+        match parse_id(
+            s_shortend,
+            source_ids=source_ids,
+        ):
             case Ok(tid):
                 ids.append(tid)
             case Err(e):
@@ -63,7 +66,10 @@ def parse_id_with_msg(
 ) -> str:
     if s is None:
         return ""
-    match parse_id(s, source_ids=source_ids):
+    match parse_id(
+        s,
+        source_ids=source_ids,
+    ):
         case Ok(tid):
             return tid  # type: ignore[no-any-return]
         case Err(e):
@@ -91,7 +97,11 @@ def parse_ids_with_msg(
 ) -> list[str]:
     if s is None:
         return []
-    match parse_ids(s, source_ids=source_ids, sep=sep):
+    match parse_ids(
+        s,
+        source_ids=source_ids,
+        sep=sep,
+    ):
         case Ok(ids):
             return ids  # type: ignore[no-any-return]
         case Err(e):

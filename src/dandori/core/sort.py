@@ -13,7 +13,7 @@ def task_sort_key(
     # priority 降順 → start_date(or now扱い) → created_at → id
     # startが無いものはnow扱いか、後置きしたい場合は調整(9999-12-31T23:59:59)にする
     if order_with_no_start == "now":
-        start = t.start_date or now_iso()
+        start = t.start_at or now_iso()
     elif order_with_no_start == "end_of_time":
         start = "9999-12-31T23:59:59"
     return (-(t.priority or 0), start, t.created_at, t.id)

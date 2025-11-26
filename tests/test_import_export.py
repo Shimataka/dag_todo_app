@@ -13,6 +13,8 @@ class TestImportExport(unittest.TestCase):
 
     def setUp(self) -> None:
         """各テストの前に一時ファイルを作成"""
+        self.original_username = os.environ.get("DD_USERNAME")
+        os.environ["DD_USERNAME"] = "test_user"
         self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")  # noqa: SIM115
         self.temp_file.close()
         self.store = StoreToYAML(data_path=self.temp_file.name)
@@ -21,13 +23,17 @@ class TestImportExport(unittest.TestCase):
     def tearDown(self) -> None:
         """各テストの後に一時ファイルを削除"""
         Path(self.temp_file.name).unlink(missing_ok=True)
+        if self.original_username is not None:
+            os.environ["DD_USERNAME"] = self.original_username
+        elif "DD_USERNAME" in os.environ:
+            del os.environ["DD_USERNAME"]
 
     def test_export_import_preserves_content(self) -> None:
         """Export / import で同一内容に戻ることを確認"""
         # 複数のタスクと依存関係を作成
-        task_a = Task(id="task_a", title="タスクA", description="説明A", priority=3)
-        task_b = Task(id="task_b", title="タスクB", description="説明B", priority=2)
-        task_c = Task(id="task_c", title="タスクC", description="説明C", priority=1)
+        task_a = Task(id="task_a", title="タスクA", description="説明A", priority=3, owner="test_user")
+        task_b = Task(id="task_b", title="タスクB", description="説明B", priority=2, owner="test_user")
+        task_c = Task(id="task_c", title="タスクC", description="説明C", priority=1, owner="test_user")
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.add_task(task_c)
@@ -91,8 +97,8 @@ class TestImportExport(unittest.TestCase):
 
     def test_export_import_preserves_archived_status(self) -> None:
         """アーカイブ状態も保持されることを確認"""
-        task_a = Task(id="task_a", title="タスクA", is_archived=True)
-        task_b = Task(id="task_b", title="タスクB", is_archived=False)
+        task_a = Task(id="task_a", title="タスクA", is_archived=True, owner="test_user")
+        task_b = Task(id="task_b", title="タスクB", is_archived=False, owner="test_user")
         self.store.add_task(task_a)
         self.store.add_task(task_b)
         self.store.save()

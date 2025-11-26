@@ -114,10 +114,11 @@ def add_task(
     tid = overwrite_id_by or gen_task_id(username)
     t = Task(
         id=tid,
+        owner=env.get("USERNAME", "anonymous"),
         title=title,
         description=description or "",
         priority=priority or 0,
-        start_date=start.strftime("%Y-%m-%dT%H:%M:%S") if start else None,
+        start_at=start.strftime("%Y-%m-%dT%H:%M:%S") if start else None,
         due_date=due.strftime("%Y-%m-%dT%H:%M:%S") if due else None,
         tags=tags or [],
         metadata={},
@@ -177,7 +178,7 @@ def update_task(  # noqa: C901
     # priority (optional)
     t.priority = priority
     # start_date (optional)
-    t.start_date = start.strftime("%Y-%m-%dT%H:%M:%S") if start else None
+    t.start_at = start.strftime("%Y-%m-%dT%H:%M:%S") if start else None
     # due_date (optional)
     t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S") if due else None
     # tags (optional)
@@ -243,6 +244,20 @@ def set_status(task_id: str, status: Status) -> Task:
         _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
     t: Task = _task.unwrap()
+
+    # in-progress --> start_at を now に設定
+    if status == "in_progress" and t.status in ("pending", None):
+        t.start_at = now_iso()
+    # pending --> start_at を None に設定
+    if status == "pending":
+        t.start_at = None
+    # done --> done_at を now に設定
+    if status == "done":
+        t.done_at = now_iso()
+    # done --> done_at を None に設定
+    if t.status == "done" and status != "done":
+        t.done_at = None
+
     t.status = status
     t.updated_at = now_iso()
 
@@ -305,27 +320,35 @@ def archive_tree(task_id: str) -> list[str]:
 
     戻り値は、アーカイブ状態が変更されたタスクIDのリスト。
     """
-    return _toggle_archive_tree(task_id, archive_flag=True)
-
-
-def unarchive_tree(task_id: str) -> list[str]:
-    """弱連結成分単位でアーカイブ解除するユースケース。"""
-    return _toggle_archive_tree(task_id, archive_flag=False)
-
-
-def _toggle_archive_tree(task_id: str, *, archive_flag: bool) -> list[str]:
     st = _get_store()
     st.load()
     st.commit()
 
-    match st.weakly_connected_component(task_id):
-        case Ok(comp):
-            for t in comp:
-                t.is_archived = archive_flag
-                t.updated_at = now_iso()
+    match st.archive_tasks(task_id):
+        case Ok(ids):
             st.commit()
             st.save()
-            return [t.id for t in comp]
+            return ids  # type: ignore[no-any-return]
+        case Err(e):
+            st.rollback()
+            raise OpsError(e)
+        case _:
+            st.rollback()
+            _msg = "Unexpected error"
+            raise OpsError(_msg)
+
+
+def unarchive_tree(task_id: str) -> list[str]:
+    """弱連結成分単位でアーカイブ解除するユースケース。"""
+    st = _get_store()
+    st.load()
+    st.commit()
+
+    match st.unarchive_tasks(task_id):
+        case Ok(ids):
+            st.commit()
+            st.save()
+            return ids  # type: ignore[no-any-return]
         case Err(e):
             st.rollback()
             raise OpsError(e)
@@ -400,6 +423,7 @@ def insert_between(
     tid = overwrite_id_by or gen_task_id(username)
     new_task = Task(
         id=tid,
+        owner=env.get("USERNAME", "anonymous"),
         title=title,
         description=description or "",
         priority=priority or 0,

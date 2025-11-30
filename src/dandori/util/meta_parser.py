@@ -66,6 +66,8 @@ def deserialize_by_json(metadata: dict[str, Any]) -> Result[str, str]:
 def serialize_by_yaml(metadata: str) -> Result[dict[str, Any], str]:
     try:
         return Ok(yaml.safe_load(metadata))
+    except yaml.YAMLError as e:
+        return Err(f"Invalid YAML: {e!s}")
     except Exception as e:  # noqa: BLE001
         return Err(f"Unknown error: {e!s}")
 

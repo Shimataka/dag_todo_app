@@ -279,7 +279,13 @@ def update_task(  # noqa: C901
                 raise e
     # metadata (optional)
     if metadata is not None:
-        t.metadata = serialize(metadata).unwrap_or({})
+        match serialize(metadata):
+            case Ok(m):
+                t.metadata = m
+            case Err(e):
+                st.rollback()
+                _msg = f"Invalid metadata: {e}"
+                raise OpsError(_msg)
     t.updated_at = now_iso()
     st.commit()
     st.save()

@@ -9,6 +9,7 @@ from dandori.core.sort import task_sort_key, topo_sort
 from dandori.storage import Store, StoreToYAML
 from dandori.util.dirs import load_env
 from dandori.util.ids import gen_task_id
+from dandori.util.meta_parser import serialize
 from dandori.util.time import now_iso
 
 if TYPE_CHECKING:
@@ -152,6 +153,7 @@ def add_task(
     start: datetime | None = None,
     due: datetime | None = None,
     tags: list[str] | None = None,
+    metadata: str | None = None,
 ) -> Task:
     """新規タスクを追加するユースケース。
 
@@ -175,7 +177,7 @@ def add_task(
         start_at=start.strftime("%Y-%m-%dT%H:%M:%S") if start else None,
         due_date=due.strftime("%Y-%m-%dT%H:%M:%S") if due else None,
         tags=tags or [],
-        metadata={},
+        metadata=serialize(metadata or "").unwrap_or({}),
     )
 
     # 追加
@@ -208,6 +210,7 @@ def update_task(  # noqa: C901
     tags: list[str] | None = None,
     parent_ids: list[str] | None = None,
     children_ids: list[str] | None = None,
+    metadata: str | None = None,
 ) -> Task:
     """タスクの基本フィールドを更新するユースケース。
 
@@ -274,7 +277,15 @@ def update_task(  # noqa: C901
             case Err(e):
                 st.rollback()
                 raise e
-
+    # metadata (optional)
+    if metadata is not None:
+        match serialize(metadata):
+            case Ok(m):
+                t.metadata = m
+            case Err(e):
+                st.rollback()
+                _msg = f"Invalid metadata: {e}"
+                raise OpsError(_msg)
     t.updated_at = now_iso()
     st.commit()
     st.save()

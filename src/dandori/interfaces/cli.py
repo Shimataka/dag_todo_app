@@ -495,7 +495,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--depends-on", nargs="*", help="parent task IDs (',' separated)")
     sp.add_argument("--children", nargs="*", help="child task IDs (',' separated)")
     sp.add_argument("--tags", nargs="*", help="tags (',' separated)")
-    sp.add_argument("--metadata", nargs="*", help="metadata in JSON or YAML format")
     sp.set_defaults(func=cmd_add)
 
     # list
@@ -533,7 +532,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--add-child", nargs="*", help="child task IDs (',' separated)")
     sp.add_argument("--remove-parent", nargs="*", help="parent task IDs (',' separated)")
     sp.add_argument("--remove-child", nargs="*", help="child task IDs (',' separated)")
-    sp.add_argument("--metadata", nargs="*", help="metadata in JSON or YAML format")
     sp.set_defaults(func=cmd_update)
 
     # inprogress

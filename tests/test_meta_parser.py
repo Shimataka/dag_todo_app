@@ -196,7 +196,7 @@ class TestMetaParser(unittest.TestCase):
         result = serialize(metadata, parser="yaml")
         # YAMLパーサーはJSONも解釈できる可能性があるが、エラーになる可能性もある
         # 実際の動作に合わせて調整
-        assert result.is_err() or result.is_ok()
+        assert result.is_err()
 
     # ---- deserialize (自動判定) ----
 

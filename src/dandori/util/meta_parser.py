@@ -9,19 +9,21 @@ def serialize(
     metadata: str,
     parser: Literal["json", "yaml"] | None = None,
 ) -> Result[dict[str, Any], str]:
+    if parser == "json":
+        return serialize_by_json(metadata)
+    if parser == "yaml":
+        return serialize_by_yaml(metadata)
+
+    # parser is None, auto-detect
     by_json = serialize_by_json(metadata)
+    if by_json.is_ok():
+        return by_json
+
     by_yaml = serialize_by_yaml(metadata)
-    match parser:
-        case "json":
-            return by_json
-        case "yaml":
-            return by_yaml
-        case None:
-            if by_json.is_ok():
-                return by_json
-            if by_yaml.is_ok():
-                return by_yaml
-            return Err(f"Invalid metadata: {metadata!s}")
+    if by_yaml.is_ok():
+        return by_yaml
+
+    return Err(f"Invalid metadata: {metadata!s}")
 
 
 def deserialize(

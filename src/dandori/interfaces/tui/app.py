@@ -609,7 +609,7 @@ class App:
                 self._reload_tasks(keep_task_id=dlg.target_task_id)
 
         else:
-            _msg = f"Invalid dialog kind: {dlg.kind}"  # type: ignore[unreachable]
+            _msg = f"Invalid dialog kind: {dlg.kind}"
             logger.error(_msg)
             self.state.msg_footer = _msg
             return

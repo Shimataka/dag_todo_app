@@ -77,7 +77,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     try:
         tasks = list_tasks(
-            status=args.status,  # type: ignore[arg-type]
+            status=args.status,
             archived=args.archived,
             topo=args.topo,
             ready_only=args.ready,
@@ -175,7 +175,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 
         # status の更新
         if args.status is not None:
-            set_status(args_id, args.status)  # type: ignore[arg-type]
+            set_status(args_id, args.status)
 
         # request 関連フィールドの更新
         if any(
@@ -606,4 +606,4 @@ def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)  # type: ignore[no-any-return]
+    return args.func(args)

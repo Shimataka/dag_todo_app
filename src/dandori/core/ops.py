@@ -137,7 +137,7 @@ def get_task(task_id: str) -> Task:
     if _task.is_err():
         _msg = f"Task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
-    return _task.unwrap()  # type: ignore[no-any-return]
+    return _task.unwrap()
 
 
 # ---- 追加 / 更新 -----------------------------------------------------------
@@ -393,7 +393,7 @@ def archive_tree(task_id: str) -> list[str]:
         case Ok(ids):
             st.commit()
             st.save()
-            return ids  # type: ignore[no-any-return]
+            return ids
         case Err(e):
             st.rollback()
             raise OpsError(e)
@@ -413,7 +413,7 @@ def unarchive_tree(task_id: str) -> list[str]:
         case Ok(ids):
             st.commit()
             st.save()
-            return ids  # type: ignore[no-any-return]
+            return ids
         case Err(e):
             st.rollback()
             raise OpsError(e)
@@ -439,7 +439,7 @@ def get_deps(task_id: str) -> list[Task]:
     if _d.is_err():
         _msg = f"Task not found: {_d.unwrap_err()}"
         raise OpsError(_msg)
-    return _d.unwrap()  # type: ignore[no-any-return]
+    return _d.unwrap()
 
 
 def get_children(task_id: str) -> list[Task]:
@@ -455,7 +455,7 @@ def get_children(task_id: str) -> list[Task]:
     if _c.is_err():
         _msg = f"Task not found: {_c.unwrap_err()}"
         raise OpsError(_msg)
-    return _c.unwrap()  # type: ignore[no-any-return]
+    return _c.unwrap()
 
 
 # ---- DAG 途中挿入 (将来の REST / TUI 用) ----------------------------------
@@ -574,7 +574,7 @@ def link_parents(child_id: str, parent_ids: list[str]) -> Task:
     if _task.is_err():
         _msg = f"Child task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
-    return _task.unwrap()  # type: ignore[no-any-return]
+    return _task.unwrap()
 
 
 def remove_parent(child_id: str, parent_id: str) -> None:
@@ -660,7 +660,7 @@ def link_children(parent_id: str, children_ids: list[str]) -> Task:
     if _task.is_err():
         _msg = f"Parent task not found: {_task.unwrap_err()}"
         raise OpsError(_msg)
-    return _task.unwrap()  # type: ignore[no-any-return]
+    return _task.unwrap()
 
 
 def remove_child(parent_id: str, child_id: str) -> None:

@@ -2,7 +2,7 @@ import copy
 from collections.abc import Callable
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pyresults import Err, Ok, Result
 
 from dandori.core.models import Task

@@ -71,7 +71,7 @@ def parse_id_with_msg(
         source_ids=source_ids,
     ):
         case Ok(tid):
-            return tid  # type: ignore[no-any-return]
+            return tid
         case Err(e):
             if msg_buffer is not None:
                 msg_buffer += f"Invalid ID: {e}"
@@ -103,7 +103,7 @@ def parse_ids_with_msg(
         sep=sep,
     ):
         case Ok(ids):
-            return ids  # type: ignore[no-any-return]
+            return ids
         case Err(e):
             if msg_buffer is not None:
                 msg_buffer += f"Invalid IDs: {e}"

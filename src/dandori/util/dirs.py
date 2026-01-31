@@ -38,12 +38,39 @@ def load_env(path: str = DEFAULT_ENV_PATH) -> dict[str, str]:
                     val = m.group(2).strip()
                     env[key] = val
 
+    # ---- プロファイル対応 ---------------------------------------------
+    #
+    # PROFILE / DD_PROFILE が指定されている場合は、
+    # ~/.dandori/<profile>/tasks.yaml, archive.yaml をデフォルトにする。
+    #
+    # 優先順位:
+    #   1. OS 環境変数 DD_DATA_PATH / DD_ARCHIVE_PATH
+    #   2. config.env 内の DATA_PATH / ARCHIVE_PATH
+    #   3. PROFILE / DD_PROFILE に応じたパス
+    #   4. 既存のデフォルト (~/.dandori/tasks.yaml 等)
+    profile = os.environ.get("DD_PROFILE") or env.get("PROFILE")
+
+    if profile:
+        profile_home = Path(DEFAULT_HOME) / profile
+        # プロファイル用ディレクトリを先に作っておく
+        profile_home.mkdir(parents=True, exist_ok=True)
+        profile_tasks_path = (profile_home / "tasks.yaml").as_posix()
+        profile_archive_path = (profile_home / "archive.yaml").as_posix()
+    else:
+        profile_tasks_path = DEFAULT_TASKS_PATH
+        profile_archive_path = DEFAULT_ARCHIVE_PATH
+
+    # config.env に書かれていればそれを優先する
+    default_data_path = env.get("DATA_PATH", profile_tasks_path)
+    default_archive_path = env.get("ARCHIVE_PATH", profile_archive_path)
+
     # OS環境変数を上書き優先
     env.update(
         {
             "USERNAME": get_username(env),
-            "DATA_PATH": os.environ.get("DD_DATA_PATH", env.get("DATA_PATH", DEFAULT_TASKS_PATH)),
-            "ARCHIVE_PATH": os.environ.get("DD_ARCHIVE_PATH", env.get("ARCHIVE_PATH", DEFAULT_ARCHIVE_PATH)),
+            "DATA_PATH": os.environ.get("DD_DATA_PATH", default_data_path),
+            "ARCHIVE_PATH": os.environ.get("DD_ARCHIVE_PATH", default_archive_path),
+            "PROFILE": profile or "default",
         },
     )
     return env

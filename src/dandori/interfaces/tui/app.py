@@ -20,7 +20,9 @@ from dandori.core.ops import (
 )
 from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState, DialogState, FieldState, OverlayState
+from dandori.interfaces.tui.style import HeaderLines
 from dandori.interfaces.tui.view import AppView
+from dandori.util.dirs import load_env
 from dandori.util.ids import parse_ids_with_msg
 from dandori.util.logger import setup_logger
 
@@ -56,60 +58,16 @@ MAX_DIALOG_BOX_WIDTH = 80
 MAX_OVERLAY_BOX_WIDTH = 100
 
 
-class HeaderLines:
-    """Header lines for the TUI."""
-
-    @classmethod
-    def height(cls) -> int:
-        return 3
-
-    @classmethod
-    def title(cls) -> str:
-        return "--- dandori (TUI) > Topological graph TODO task manager ---"
-
-    @classmethod
-    def status(
-        cls,
-        status_label: str,
-        archived_label: str,
-        topo_label: str,
-        req_label: str,
-    ) -> str:
-        return cls._status_line(status_label, archived_label, topo_label, req_label)
-
-    @classmethod
-    def help(cls) -> str:
-        return cls._help_line()
-
-    @classmethod
-    def _status_line(
-        cls,
-        status_label: str,
-        archived_label: str,
-        topo_label: str,
-        req_label: str,
-    ) -> str:
-        status_line = "List: [↑/↓ Move, [/] Scroll] "
-        status_line += f"[(f/F)ilter: {status_label}] [(a)rchived: {archived_label}] "
-        status_line += f"[(t)opo: {topo_label}] [(r)equested: {req_label}]"
-        return status_line
-
-    @classmethod
-    def _help_line(cls) -> str:
-        help_line = "Task: [(A)dd] [(E)dit] [(R)equest] [(G)raph] "
-        help_line += "[(p)end] [(i)n_progress] [(d)one] [(x)Archive] [(u)narchive] [(q)uit]"
-        return help_line
-
-
 class App:
     def __init__(
         self,
         stdscr: curses.window,
         args: argparse.Namespace | None = None,
     ) -> None:
+        env = load_env()
         self.stdscr = stdscr
         self.args = args
-        self.state = AppState()
+        self.state = AppState(profile=env.get("PROFILE", "default"))
         self.view = AppView(stdscr, self.state)
         self._init_curses()
         self._reload_tasks()

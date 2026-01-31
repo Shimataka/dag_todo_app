@@ -217,17 +217,45 @@ class StoreToSQLite(Store):
 
     def get_tasks(self, task_ids: list[str]) -> Result[list[Task], str]:
         # YAML 実装に合わせて「存在しない ID は単に無視し、Err は返さない」
+        # IN 句で一括取得して N+1 を避ける
         if not task_ids:
             return Ok([])
-        tasks: list[Task] = []
-        for tid in task_ids:
-            match self.get_task(tid):
-                case Ok(t):
-                    tasks.append(t)
-                case Err(e):
-                    logger.exception("get_tasks: %s", e)
-                    continue
-        return Ok(tasks)
+        c = self.conn
+        ids = list(dict.fromkeys(task_ids))  # 順序保持・重複除去
+        ph = ", ".join("?" for _ in ids)
+
+        # 1. 対象タスクを一括取得 (ph は "?, ..." のみ、ids はバインドで安全)
+        rows = c.execute(
+            "SELECT * FROM tasks WHERE id IN (" + ph + ")",  # noqa: S608
+            ids,
+        ).fetchall()
+        id_to_task: dict[str, Task] = {}
+        for row in rows:
+            t = self._row_to_task(row)
+            id_to_task[t.id] = t
+
+        if not id_to_task:
+            return Ok([])
+
+        # 2. それらのタスクに紐づくエッジを一括取得
+        q_edges = (
+            "SELECT parent_id, child_id FROM edges WHERE parent_id IN ("  # noqa: S608
+            + ph
+            + ") OR child_id IN ("
+            + ph
+            + ")"
+        )
+        for row in c.execute(q_edges, ids + ids):
+            pid, cid = row["parent_id"], row["child_id"]
+            parent = id_to_task.get(pid)
+            child = id_to_task.get(cid)
+            if parent is not None and cid not in parent.children:
+                parent.children.append(cid)
+            if child is not None and pid not in child.depends_on:
+                child.depends_on.append(pid)
+
+        # task_ids の順で返す (存在しない ID はスキップ)
+        return Ok([id_to_task[tid] for tid in task_ids if tid in id_to_task])
 
     def get_all_tasks(self) -> Result[dict[str, Task], str]:
         try:
@@ -561,20 +589,18 @@ class StoreToSQLite(Store):
                 return Err(msg)
             case Ok(t):
                 deps: list[str] = []
-                for pid in t.depends_on:
-                    match self.get_task(pid):
-                        case Ok(pt):
-                            deps.append(pt.title)
-                        case Err(_):
-                            deps.append(f"<{pid} not found>")
+                match self.get_tasks(t.depends_on):
+                    case Ok(pts):
+                        deps.extend([pt.title for pt in pts])
+                    case Err(_):
+                        deps.extend([f"<{pid} not found>" for pid in t.depends_on])
 
                 children: list[str] = []
-                for cid in t.children:
-                    match self.get_task(cid):
-                        case Ok(ct):
-                            children.append(ct.title)
-                        case Err(_):
-                            children.append(f"<{cid} not found>")
+                match self.get_tasks(t.children):
+                    case Ok(cts):
+                        children.extend([ct.title for ct in cts])
+                    case Err(_):
+                        children.extend([f"<{cid} not found>" for cid in t.children])
 
                 return Ok({"task": [t.title], "depends_on": deps, "children": children})
             case _:

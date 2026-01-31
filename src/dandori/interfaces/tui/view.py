@@ -187,7 +187,7 @@ class AppView:
             else f.component_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
         )
 
-        title = HeaderLines.title()
+        title = HeaderLines.title(self.state.profile)
         status = HeaderLines.status(
             status_label,
             archived_label,

@@ -57,6 +57,7 @@ class DialogState:
 @dataclass
 class AppState:
     tasks: list[Task] = field(default_factory=list)
+    profile: str = "default"
     selected_index: int = 0
     mode: Mode = "list"
     filter: FilterState = field(default_factory=FilterState)

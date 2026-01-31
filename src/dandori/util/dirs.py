@@ -73,6 +73,4 @@ def load_env(path: str = DEFAULT_ENV_PATH) -> dict[str, str]:
             "PROFILE": profile or "default",
         },
     )
-    with (Path.cwd() / "test.txt").open("w", encoding="utf-8") as f:
-        f.write(str(env))
     return env

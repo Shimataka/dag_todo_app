@@ -143,6 +143,24 @@ class StoreToYAML(Store):
                 logger.exception(_msg)
                 return Err[None, str](_msg)
 
+    def update_task(self, task: Task) -> Result[None, str]:
+        """タスクを更新する。
+
+        Args:
+            task: 更新するタスク
+
+        Returns:
+            Ok(None): 成功時
+            Err(str): 失敗時（例: タスクが見つからない）
+        """
+        if task.id not in self.tasks:
+            _msg = f"Task not found: {task.id}"
+            logger.exception(_msg)
+            return Err[None, str](_msg)
+        task.updated_at = now_iso()
+        self.tasks[task.id] = task
+        return Ok[None, str](None)
+
     def remove_task(self, task_id: str) -> Result[None, str]:
         """タスクを削除する。
 

@@ -13,6 +13,7 @@ from dandori.util.meta_parser import serialize
 from dandori.util.time import now_iso
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 
@@ -50,6 +51,35 @@ def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
         if child and child.status in not_completed and not child.is_archived:
             return True
     return False
+
+
+def _update_field(task_id: str, fn: Callable[[Task], None]) -> Task:
+    """共通の単一タスク更新ユースケースヘルパー
+
+    - Store バックエンド (YAML/SQLite) に依存しない形でタスクを更新する
+    - 例外は OpsError を送出する
+    """
+    st = get_store()
+    st.load()
+
+    _res = st.get_task(task_id)
+    if _res.is_err():
+        _msg = f"Task not found: {_res.unwrap_err()}"
+        raise OpsError(_msg)
+    t: Task = _res.unwrap()
+    fn(t)
+    match st.update_task(t):
+        case Err(err):
+            _msg = f"Error (update_field): {err}"
+            raise OpsError(_msg)
+        case Ok(None):
+            pass
+        case _:
+            _msg = "Unexpected error"
+            raise OpsError(_msg)
+    st.commit()
+    st.save()
+    return t
 
 
 # ---- 一覧取得 / 個別取得 ----------------------------------------------------
@@ -279,6 +309,16 @@ def update_task(  # noqa: C901
                 _msg = f"Invalid metadata: {e}"
                 raise OpsError(_msg)
     t.updated_at = now_iso()
+
+    match st.update_task(t):
+        case Err(e):
+            st.rollback()
+            raise OpsError(e)
+        case Ok(None):
+            pass
+        case _:
+            _msg = "Unexpected error"
+            raise OpsError(_msg)
     st.commit()
     st.save()
     return t
@@ -292,35 +332,25 @@ def set_status(task_id: str, status: Status) -> Task:
 
     archived への変更は archive_tree / unarchive_tree を利用する想定。
     """
-    st = get_store()
-    st.load()
-    st.commit()
 
-    _task = st.get_task(task_id)
-    if _task.is_err():
-        _msg = f"Task not found: {_task.unwrap_err()}"
-        raise OpsError(_msg)
-    t: Task = _task.unwrap()
+    def _mutate(t: Task) -> None:
+        # in-progress --> start_at を now に設定
+        if status == "in_progress" and t.status in ("pending", None):
+            t.start_at = now_iso()
+        # pending --> start_at を None に設定
+        if status == "pending":
+            t.start_at = None
+        # done --> done_at を now に設定
+        if status == "done":
+            t.done_at = now_iso()
+        # done --> done_at を None に設定
+        if t.status == "done" and status != "done":
+            t.done_at = None
 
-    # in-progress --> start_at を now に設定
-    if status == "in_progress" and t.status in ("pending", None):
-        t.start_at = now_iso()
-    # pending --> start_at を None に設定
-    if status == "pending":
-        t.start_at = None
-    # done --> done_at を now に設定
-    if status == "done":
-        t.done_at = now_iso()
-    # done --> done_at を None に設定
-    if t.status == "done" and status != "done":
-        t.done_at = None
+        t.status = status
+        t.updated_at = now_iso()
 
-    t.status = status
-    t.updated_at = now_iso()
-
-    st.commit()
-    st.save()
-    return t
+    return _update_field(task_id, _mutate)
 
 
 def set_requested(
@@ -343,33 +373,22 @@ def set_requested(
     env = load_env()
     requested_by = requested_by or env.get("USERNAME", "anonymous")
 
-    st = get_store()
-    st.load()
-    st.commit()
+    def _mutate(t: Task) -> None:
+        if requested_to is not None:
+            t.assigned_to = requested_to
+        if note is not None:
+            t.requested_note = f"{PREFIX_REQUEST_NOTE} {note}"
+        if due is not None:
+            t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
+        if requested_by is not None:
+            t.requested_by = requested_by
 
-    _task = st.get_task(task_id)
-    if _task.is_err():
-        _msg = f"Task not found: {_task.unwrap_err()}"
-        raise OpsError(_msg)
-    t: Task = _task.unwrap()
-
-    if requested_to is not None:
-        t.assigned_to = requested_to
-    if note is not None:
-        t.requested_note = f"{PREFIX_REQUEST_NOTE} {note}"
-    if due is not None:
-        t.due_date = due.strftime("%Y-%m-%dT%H:%M:%S")
-    if requested_by is not None:
+        t.status = "requested"
+        t.requested_at = now_iso() if t.requested_at is None else t.requested_at
         t.requested_by = requested_by
+        t.updated_at = now_iso()
 
-    t.status = "requested"
-    t.requested_at = now_iso() if t.requested_at is None else t.requested_at
-    t.requested_by = requested_by
-    t.updated_at = now_iso()
-
-    st.commit()
-    st.save()
-    return t
+    return _update_field(task_id, _mutate)
 
 
 def archive_tree(task_id: str) -> list[str]:

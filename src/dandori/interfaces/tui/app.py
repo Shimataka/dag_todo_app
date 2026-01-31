@@ -825,6 +825,21 @@ class App:
             self.state.msg_footer = "Filter: component=all"
         self._reload_tasks()
 
+    def _load_task_from_storage(self) -> None:
+        """Load tasks from storage."""
+        current = self.view.current_task()
+        keep_task_id = current.id if current is not None else None
+        try:
+            self._reload_tasks(keep_task_id=keep_task_id)
+            if keep_task_id is not None:
+                self.state.msg_footer = (
+                    f"Loaded tasks ({keep_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}) from storage"
+                )
+            else:
+                self.state.msg_footer = "Loaded tasks from storage"
+        except OpsError as e:
+            self.state.msg_footer = f"Error (load): {e}"
+
     def handle_key(self, key: int, ch: str | None = None) -> bool:  # noqa: C901
         # in dialog
         if self.state.mode == "dialog" and self.state.dialog is not None:
@@ -887,6 +902,9 @@ class App:
         elif key in (ord("t"),):
             # topo on/off
             self._toggle_topo()
+        elif key in (ord("l"),):
+            # load tasks from storage
+            self._load_task_from_storage()
         elif key in (ord("b"),):
             # bottleneck_only toggle
             self._toggle_bottleneck_only_filter()

@@ -3,9 +3,30 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from dandori.core.models import Task
 from dandori.io.json_io import export_json, import_json
 from dandori.storage.yaml_store import StoreToYAML
+
+
+def test_export_json_file_exists_raises() -> None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
+        path = f.name
+    try:
+        with Path(path).open("w") as f:
+            f.write("{}")
+        with pytest.raises(FileExistsError) as exc_info:
+            export_json({}, path)
+        assert "already exists" in str(exc_info.value)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def test_import_json_file_not_found_raises() -> None:
+    with pytest.raises(FileNotFoundError) as exc_info:
+        import_json("/nonexistent/path/to/file.json")
+    assert "not found" in str(exc_info.value).lower() or "File not found" in str(exc_info.value)
 
 
 class TestImportExport(unittest.TestCase):

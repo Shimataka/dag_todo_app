@@ -7,7 +7,7 @@
   * **厳格ブロック無し**
   * **「間に挿入」明示エッジ指定**
   * **木単位アーカイブは `is_archived` で非破壊**
-* ストレージは **YAML(P yYAML)** と **SQLite** の2ドライバを同一IFで切替。
+* ストレージは **YAML(PyYAML)** と **SQLite** の2ドライバを同一IFで切替。
 * CLIは `blocked-by` を採用、`insert-between --edge A B` を中核操作に。
 * RESTは標準ライブラリで最小実装、のち豪華UIを前面差し替え可能。
 

@@ -6,7 +6,7 @@ from pyresults import Err, Ok, Result
 
 from dandori.core.models import Task
 from dandori.core.sort import task_sort_key, topo_sort
-from dandori.storage import Store, StoreToYAML
+from dandori.storage import Store, get_store
 from dandori.util.dirs import load_env
 from dandori.util.ids import gen_task_id
 from dandori.util.meta_parser import serialize
@@ -25,14 +25,6 @@ class OpsError(Exception):
 
 
 # ---- 内部ユーティリティ ----------------------------------------------------
-
-
-def _get_store() -> Store:
-    """デフォルトの Store 実装を取得する。
-
-    将来 SQLite 対応などで差し替える場合はここを変更する。
-    """
-    return StoreToYAML()
 
 
 def _is_ready(task: Task, all_tasks: dict[str, Task]) -> bool:
@@ -78,7 +70,7 @@ def list_tasks(  # noqa: C901
     status / archived / topo / requested_only を組み合わせてフィルタ・ソートする。
     TUI・REST の両方から利用する想定。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
 
     # component_of で弱連結成分をフィルタ
@@ -131,7 +123,7 @@ def list_tasks(  # noqa: C901
 
 def get_task(task_id: str) -> Task:
     """単一タスクを取得するユースケース。見つからない場合は OpsError。"""
-    st = _get_store()
+    st = get_store()
     st.load()
     _task = st.get_task(task_id)
     if _task.is_err():
@@ -163,7 +155,7 @@ def add_task(
     env = load_env()
     username = env.get("USERNAME", "anonymous")
 
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -216,7 +208,7 @@ def update_task(  # noqa: C901
 
     status や request 系の変更は set_status / set_requested を利用する。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -300,7 +292,7 @@ def set_status(task_id: str, status: Status) -> Task:
 
     archived への変更は archive_tree / unarchive_tree を利用する想定。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -351,7 +343,7 @@ def set_requested(
     env = load_env()
     requested_by = requested_by or env.get("USERNAME", "anonymous")
 
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -385,7 +377,7 @@ def archive_tree(task_id: str) -> list[str]:
 
     戻り値は、アーカイブ状態が変更されたタスクIDのリスト。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -405,7 +397,7 @@ def archive_tree(task_id: str) -> list[str]:
 
 def unarchive_tree(task_id: str) -> list[str]:
     """弱連結成分単位でアーカイブ解除するユースケース。"""
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -428,7 +420,7 @@ def unarchive_tree(task_id: str) -> list[str]:
 
 def get_deps(task_id: str) -> list[Task]:
     """指定タスクが依存している親タスク一覧を返すユースケース。"""
-    st = _get_store()
+    st = get_store()
     st.load()
     _t = st.get_task(task_id)
     if _t.is_err():
@@ -444,7 +436,7 @@ def get_deps(task_id: str) -> list[Task]:
 
 def get_children(task_id: str) -> list[Task]:
     """指定タスクを親とする子タスク一覧を返すユースケース。"""
-    st = _get_store()
+    st = get_store()
     st.load()
     _t = st.get_task(task_id)
     if _t.is_err():
@@ -480,7 +472,7 @@ def insert_between(
     env = load_env()
     username = env.get("USERNAME", "anonymous")
 
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -557,7 +549,7 @@ def link_parents(child_id: str, parent_ids: list[str]) -> Task:
 
     戻り値として、親追加後の child Task を返す。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -582,7 +574,7 @@ def remove_parent(child_id: str, parent_id: str) -> None:
 
     循環が検出された場合や unlink 失敗時は OpsError を送出する。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -643,7 +635,7 @@ def link_children(parent_id: str, children_ids: list[str]) -> Task:
 
     戻り値として、子追加後の parent Task を返す。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 
@@ -668,7 +660,7 @@ def remove_child(parent_id: str, child_id: str) -> None:
 
     unlink 失敗時は OpsError を送出する。
     """
-    st = _get_store()
+    st = get_store()
     st.load()
     st.commit()
 

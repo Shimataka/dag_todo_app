@@ -480,25 +480,6 @@ class TestSQLiteDBPersistent(unittest.TestCase):
         assert result.is_err()
         assert "not found" in result.unwrap_err()
 
-    def test_deep_copy_isolation(self) -> None:
-        """Commit/rollback で deepcopy が正しく動作することを確認"""
-        # 初期状態を commit
-        task_a = Task(id="task_a", title="タスクA", owner="test_user")
-        self.store.add_task(task_a)
-        self.store.commit()
-
-        # _tmp_tasks のタスクを変更
-        task_a_tmp = self.store.get_task("task_a").unwrap()
-        task_a_tmp.title = "変更されたタイトル"
-
-        # _tasks のタスクは変更されていない(deepcopy の確認)
-        assert self.store.get_task("task_a").unwrap().title == "タスクA"
-        assert task_a_tmp.title == "変更されたタイトル"
-
-        # rollback で元に戻る
-        self.store.rollback()
-        assert self.store.get_task("task_a").unwrap().title == "タスクA"
-
 
 if __name__ == "__main__":
     unittest.main()

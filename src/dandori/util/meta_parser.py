@@ -1,7 +1,7 @@
 import json
 from typing import Any, Literal
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pyresults import Err, Ok, Result
 
 

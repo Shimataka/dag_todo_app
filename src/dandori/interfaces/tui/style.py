@@ -32,7 +32,7 @@ class HeaderLines:
     @classmethod
     def title(cls) -> str:
         _title = "--- dandori (TUI) > Topological graph TODO task manager ---"
-        _title += " [↑/↓ Move, [/] Scroll] [(q)uit]"
+        _title += " [↑/↓ Move, [/] Scroll] [re(l)oad] [(q)uit]"
         return _title
 
     @classmethod

@@ -1,6 +1,6 @@
 [project]
 name = "dandori"
-version = "0.1.1"
+version = "0.2.0"
 description = "Dandori is a task management system that uses a DAG to manage tasks."
 readme = "README.md"
 authors = [

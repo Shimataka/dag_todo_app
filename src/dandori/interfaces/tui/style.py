@@ -27,6 +27,16 @@ class HeaderLines:
 
     @classmethod
     def height(cls) -> int:
+        """Return the height of the header lines.
+
+        - 1 line for title
+        - 1 line for status
+        - 1 line for help
+
+        Returns:
+            int: the height of the header lines
+
+        """
         return 3
 
     @classmethod

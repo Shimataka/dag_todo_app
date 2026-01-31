@@ -272,7 +272,7 @@ class TestSQLiteDBPersistent(unittest.TestCase):
         """各テストの前に一時ファイルを作成"""
         self.original_username = os.environ.get("DD_USERNAME")
         os.environ["DD_USERNAME"] = "test_user"
-        self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")  # noqa: SIM115
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")  # noqa: SIM115
         self.temp_file.close()
         self.store = StoreToSQLite(data_path=self.temp_file.name)
         self.store.load()

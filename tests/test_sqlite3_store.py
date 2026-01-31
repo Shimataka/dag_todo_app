@@ -33,6 +33,20 @@ class TestSQLite3Store(unittest.TestCase):
         assert r.is_err()
         assert "already exists" in r.unwrap_err().lower()
 
+    def test_add_task_with_depends_on_creates_edges(self) -> None:
+        """add_task に depends_on 付きのタスクを渡すと edges に反映される (import/マイグレと YAML 同様)."""
+        parent = Task(id="pa", title="Parent", owner="test_user")
+        child = Task(id="ch", title="Child", owner="test_user", depends_on=["pa"])
+        self.store.add_task(parent)
+        self.store.add_task(child)
+        self.store.commit()
+        ra = self.store.get_task("pa")
+        rb = self.store.get_task("ch")
+        assert ra.is_ok()
+        assert rb.is_ok()
+        assert ra.unwrap().children == ["ch"]
+        assert rb.unwrap().depends_on == ["pa"]
+
     def test_get_task_not_found_err(self) -> None:
         r = self.store.get_task("nonexistent")
         assert r.is_err()

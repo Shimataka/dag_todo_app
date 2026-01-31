@@ -313,6 +313,25 @@ class StoreToSQLite(Store):
                     self._encode_metadata(task.metadata),
                 ),
             )
+            # task.depends_on を edges に反映 (import/マイグレ等で事前リンクされたタスクを YAML と同様に一貫)
+            now = now_iso()
+            for pid in task.depends_on:
+                cur = c.execute("SELECT 1 FROM tasks WHERE id = ?", (pid,))
+                if cur.fetchone() is None:
+                    continue  # 親未登録はスキップ。後から link_tasks で追加可能
+                cur = c.execute(
+                    "SELECT 1 FROM edges WHERE parent_id = ? AND child_id = ?",
+                    (pid, task.id),
+                )
+                if cur.fetchone() is None:
+                    c.execute(
+                        "INSERT INTO edges (parent_id, child_id) VALUES (?, ?)",
+                        (pid, task.id),
+                    )
+                    c.execute(
+                        "UPDATE tasks SET updated_at = ? WHERE id IN (?, ?)",
+                        (now, pid, task.id),
+                    )
             return Ok(None)
         except Exception as e:
             msg = f"Error (add_task): {e!s}"

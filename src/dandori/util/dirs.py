@@ -9,10 +9,10 @@ DEFAULT_ENV_PATH = (Path(DEFAULT_HOME) / "config.env").as_posix()
 
 
 def get_username(env: dict[str, str]) -> str:
-    if (username := env.get("USERNAME")) is not None:
-        return username
     if (username := os.environ.get("DD_USERNAME")) is not None:
-        return username
+        return username.strip('"').strip("'")
+    if (username := env.get("USERNAME")) is not None:
+        return username.strip('"').strip("'")
     _msg = "CRITICAL: USERNAME is not set. Please set DD_USERNAME environment variable, "
     _msg += f"and create a config.env file in {DEFAULT_HOME} and set USERNAME in it."
     raise ValueError(_msg)

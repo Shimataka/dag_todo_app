@@ -22,17 +22,13 @@ from dandori.core.validate import detect_cycles, detect_inconsistencies
 from dandori.interfaces import LENGTH_SHORTEND_ID, tui
 from dandori.io.json_io import export_json, import_json
 from dandori.io.std_io import print_task
-from dandori.storage import Store, StoreToYAML
+from dandori.storage import get_store
 from dandori.util.dirs import load_env
 from dandori.util.ids import parse_id_with_msg
 from dandori.util.logger import setup_logger, setup_mode
 from dandori.util.time import format_requested_sla
 
 logger = setup_logger("dandori", is_stream=True, is_file=True)
-
-
-def get_store() -> Store:
-    return StoreToYAML()
 
 
 def _parse_datetime(s: str | None) -> datetime | None:

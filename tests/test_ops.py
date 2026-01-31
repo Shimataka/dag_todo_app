@@ -93,6 +93,41 @@ class TestOps(unittest.TestCase):
         assert task_ids.index(task1.id) < task_ids.index(task2.id)
         assert task_ids.index(task2.id) < task_ids.index(task3.id)
 
+    def test_list_tasks_with_ready_only(self) -> None:
+        """ready_only で依存がすべて完了しているタスクのみ取得できることを確認"""
+        parent = ops.add_task([], "親")
+        child = ops.add_task([parent.id], "子")
+        ops.set_status(parent.id, "done")
+        ready = ops.list_tasks(ready_only=True)
+        ids = [t.id for t in ready]
+        assert child.id in ids
+        assert parent.id not in ids  # done なので ready フィルタでは pending 等のみ
+
+    def test_list_tasks_with_bottleneck_only(self) -> None:
+        """bottleneck_only で未完了の子がいるタスクのみ取得できることを確認"""
+        parent = ops.add_task([], "親")
+        ops.add_task([parent.id], "子")
+        bottleneck = ops.list_tasks(bottleneck_only=True)
+        ids = [t.id for t in bottleneck]
+        assert parent.id in ids
+
+    def test_list_tasks_with_component_of(self) -> None:
+        """component_of で指定タスクと同じ弱連結成分のみ取得できることを確認"""
+        a = ops.add_task([], "A")
+        b = ops.add_task([a.id], "B")
+        c = ops.add_task([], "C")
+        tasks = ops.list_tasks(component_of=a.id)
+        ids = [t.id for t in tasks]
+        assert a.id in ids
+        assert b.id in ids
+        assert c.id not in ids
+
+    def test_list_tasks_component_of_not_found_raises(self) -> None:
+        """component_of に存在しない ID を渡すと OpsError になることを確認"""
+        with pytest.raises(ops.OpsError) as exc_info:
+            ops.list_tasks(component_of="nonexistent_id")
+        assert "not found" in str(exc_info.value).lower() or "error" in str(exc_info.value).lower()
+
     def test_get_task_success(self) -> None:
         """存在するタスクを取得できることを確認"""
         task = ops.add_task([], "テストタスク", description="説明", priority=3)

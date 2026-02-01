@@ -68,6 +68,7 @@ def get_data_path() -> Path:
     data_path_str = os.environ.get("DD_DATA_PATH")
     data_path = default_data_path() if data_path_str is None else Path(data_path_str)
     if not data_path.exists():
+        data_path.parent.mkdir(parents=True, exist_ok=True)
         data_path.touch(exist_ok=False)
     if not data_path.is_file():
         _msg = f"Data path not a file: {data_path}"
@@ -95,6 +96,7 @@ def get_archive_path() -> Path:
     archive_path_str = os.environ.get("DD_ARCHIVE_PATH")
     archive_path = Path(archive_path_str) if archive_path_str is not None else default_archive_path()
     if not archive_path.exists():
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
         archive_path.touch(exist_ok=False)
     if not archive_path.is_file():
         _msg = f"Archive path not a file: {archive_path}"
@@ -125,7 +127,7 @@ def load_config() -> dict[str, str]:
     if not env_path.exists():
         return {}
     with env_path.open(encoding="utf-8") as f:
-        return {line.strip().split("=")[0]: line.strip().split("=")[1] for line in f if line.strip()}
+        return dict(line.strip().split("=", 1) for line in f if line.strip() and "=" in line)
 
 
 def load_env() -> dict[str, str]:

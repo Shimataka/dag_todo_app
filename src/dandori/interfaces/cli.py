@@ -1,9 +1,11 @@
 # ruff: noqa: C901, T201
 
 import argparse
+import os
 import sys
 from datetime import datetime
 
+from dandori import __version__
 from dandori.core.ops import (
     OpsError,
     add_task,
@@ -12,10 +14,11 @@ from dandori.core.ops import (
     insert_between,
     link_parents,
     list_tasks,
-    remove_parent,
+    remove_task,
     set_requested,
     set_status,
     unarchive_tree,
+    unlink_parent,
     update_task,
 )
 from dandori.core.validate import detect_cycles, detect_inconsistencies
@@ -200,14 +203,30 @@ def cmd_update(args: argparse.Namespace) -> int:
         # 親子リンクの削除
         if args.remove_parent:
             for pid in args.remove_parent:
-                remove_parent(args_id, pid)
+                unlink_parent(args_id, pid)
         if args.remove_child:
             for cid in args.remove_child:
-                remove_parent(cid, args_id)
+                unlink_parent(cid, args_id)
 
         print(f"updated: {args_id}")
     except OpsError as e:
         _msg = f"An error occurred while updating a task: {e!s}"
+        logger.exception(_msg)
+        return 1
+    else:
+        return 0
+
+
+def cmd_remove(args: argparse.Namespace) -> int:
+    try:
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+        )
+        remove_task(args_id)
+        print(f"removed: {args_id}")
+    except OpsError as e:
+        _msg = f"An error occurred while removing a task: {e!s}"
         logger.exception(_msg)
         return 1
     else:
@@ -472,13 +491,19 @@ def cmd_tui(args: argparse.Namespace) -> int:
         return 1
 
 
+def set_env(key: str, value: str) -> None:
+    os.environ[key] = value
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    # log (debug mode)
+    p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--debug", action="store_true", help="debug mode")
-    p.set_defaults(func=lambda args: setup_mode(is_debug=args.debug))
+    p.add_argument("-u", "--username", help="username")
+    p.add_argument("-p", "--profile", help="profile")
+
+    # subargs
+    sub = p.add_subparsers(dest="cmd", required=True)
 
     # add
     sp = sub.add_parser("add", help="add a task")
@@ -529,6 +554,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--remove-parent", nargs="*", help="parent task IDs (',' separated)")
     sp.add_argument("--remove-child", nargs="*", help="child task IDs (',' separated)")
     sp.set_defaults(func=cmd_update)
+
+    # remove
+    sp = sub.add_parser("remove", help="remove a task")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_remove)
 
     # inprogress
     sp = sub.add_parser("inprogress", help="mark in progress")
@@ -602,4 +632,11 @@ def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
+    # Apply global options before subcommand (root func is never used when subcommand exists)
+    if getattr(args, "debug", False):
+        setup_mode(is_debug=True)
+    if getattr(args, "username", None) is not None:
+        set_env("DD_USERNAME", args.username)
+    if getattr(args, "profile", None) is not None:
+        set_env("DD_PROFILE", args.profile)
     return args.func(args)

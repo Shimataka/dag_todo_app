@@ -324,6 +324,39 @@ def update_task(  # noqa: C901
     return t
 
 
+def remove_task(task_id: str) -> None:
+    """タスクを完全に削除するユースケース。
+
+    基本的にはステータス変更で不可視化する運用であり、本関数はどうしても削除したい場合にのみ利用する。
+    削除されたタスクは復元できないので注意。
+    タスクと関連する親子関係は、関連先タスクからも削除される。
+    """
+    st = get_store()
+    st.load()
+    st.commit()
+    _task = st.get_task(task_id)
+    if _task.is_err():
+        _msg = f"Task not found: {_task.unwrap_err()}"
+        raise OpsError(_msg)
+    t: Task = _task.unwrap()
+    for parent_id in t.depends_on:
+        match st.unlink_tasks(parent_id, task_id):
+            case Err(e):
+                st.rollback()
+                raise OpsError(e)
+    for child_id in t.children:
+        match st.unlink_tasks(task_id, child_id):
+            case Err(e):
+                st.rollback()
+                raise OpsError(e)
+    match st.remove_task(task_id):
+        case Err(e):
+            st.rollback()
+            raise OpsError(e)
+    st.commit()
+    st.save()
+
+
 # ---- 状態変更 --------------------------------------------------------------
 
 
@@ -588,7 +621,7 @@ def link_parents(child_id: str, parent_ids: list[str]) -> Task:
     return _task.unwrap()
 
 
-def remove_parent(child_id: str, parent_id: str) -> None:
+def unlink_parent(child_id: str, parent_id: str) -> None:
     """親子関係 parent_id -> child_id を外す。
 
     循環が検出された場合や unlink 失敗時は OpsError を送出する。
@@ -674,8 +707,8 @@ def link_children(parent_id: str, children_ids: list[str]) -> Task:
     return _task.unwrap()
 
 
-def remove_child(parent_id: str, child_id: str) -> None:
-    """既存タスク parent_id に対して、子 child_id を削除する。
+def unlink_child(parent_id: str, child_id: str) -> None:
+    """既存タスク parent_id に対して、子 child_id を外す。
 
     unlink 失敗時は OpsError を送出する。
     """

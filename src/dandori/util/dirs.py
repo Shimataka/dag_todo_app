@@ -1,76 +1,146 @@
+import getpass
 import os
-import re
 from pathlib import Path
 
-DEFAULT_HOME = os.environ.get("DD_HOME_DIR", (Path.home() / ".dandori").as_posix())
-DEFAULT_TASKS_PATH = (Path(DEFAULT_HOME) / "tasks.yaml").as_posix()
-DEFAULT_ARCHIVE_PATH = (Path(DEFAULT_HOME) / "archive.yaml").as_posix()
-DEFAULT_ENV_PATH = (Path(DEFAULT_HOME) / "config.env").as_posix()
+
+def default_username() -> str:
+    """デフォルトのユーザー名を取得します。
+
+    Returns:
+        str: デフォルトのユーザー名
+    """
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001
+        return "anonymous"
 
 
-def get_username(env: dict[str, str]) -> str:
-    if (username := os.environ.get("DD_USERNAME")) is not None:
-        return username.strip('"').strip("'")
-    if (username := env.get("USERNAME")) is not None:
-        return username.strip('"').strip("'")
-    _msg = "CRITICAL: USERNAME is not set. Please set DD_USERNAME environment variable, "
-    _msg += f"and create a config.env file in {DEFAULT_HOME} and set USERNAME in it."
-    raise ValueError(_msg)
+def get_username() -> str:
+    """ユーザー名を取得します。
+
+    Args:
+        str: ユーザー名
+    """
+    username = os.environ.get("DD_USERNAME")
+    if username is not None:
+        return username
+    return default_username()
 
 
-def ensure_dirs() -> None:
-    _path = Path(DEFAULT_HOME)
-    _path.mkdir(parents=True, exist_ok=True)
+def default_profile() -> str:
+    """デフォルトのプロファイル名を取得します。
+
+    Returns:
+        str: デフォルトのプロファイル名
+    """
+    return "default"
 
 
-def load_env(path: str = DEFAULT_ENV_PATH) -> dict[str, str]:
-    env: dict[str, str] = {}
-    _path = Path(path)
-    if _path.exists():
-        with _path.open(encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                m = re.match(r"([^=]+)=(.*)", line)
-                if m:
-                    key = m.group(1).strip()
-                    val = m.group(2).strip()
-                    env[key] = val
+def get_profile() -> str:
+    """プロファイル名を取得します。
 
-    # ---- プロファイル対応 ---------------------------------------------
-    #
-    # PROFILE / DD_PROFILE が指定されている場合は、
-    # ~/.dandori/<profile>/tasks.yaml, archive.yaml をデフォルトにする。
-    #
-    # 優先順位:
-    #   1. OS 環境変数 DD_DATA_PATH / DD_ARCHIVE_PATH
-    #   2. config.env 内の DATA_PATH / ARCHIVE_PATH
-    #   3. PROFILE / DD_PROFILE に応じたパス
-    #   4. 既存のデフォルト (~/.dandori/tasks.yaml 等)
-    profile = os.environ.get("DD_PROFILE") or env.get("PROFILE")
+    Args:
+        str: プロファイル名
+    """
+    profile = os.environ.get("DD_PROFILE")
+    if profile is not None:
+        return profile
+    return default_profile()
 
-    if profile:
-        profile_home = Path(DEFAULT_HOME) / profile
-        # プロファイル用ディレクトリを先に作っておく
-        profile_home.mkdir(parents=True, exist_ok=True)
-        profile_tasks_path = (profile_home / "tasks.yaml").as_posix()
-        profile_archive_path = (profile_home / "archive.yaml").as_posix()
-    else:
-        profile_tasks_path = DEFAULT_TASKS_PATH
-        profile_archive_path = DEFAULT_ARCHIVE_PATH
 
-    # config.env に書かれていればそれを優先する
-    default_data_path = env.get("DATA_PATH", profile_tasks_path)
-    default_archive_path = env.get("ARCHIVE_PATH", profile_archive_path)
+def default_data_path() -> Path:
+    """デフォルトのデータパスを取得します。
 
-    # OS環境変数を上書き優先
-    env.update(
-        {
-            "USERNAME": get_username(env),
-            "DATA_PATH": os.environ.get("DD_DATA_PATH", default_data_path),
-            "ARCHIVE_PATH": os.environ.get("DD_ARCHIVE_PATH", default_archive_path),
-            "PROFILE": profile or "default",
-        },
-    )
+    Returns:
+        Path: デフォルトのデータパス
+    """
+    if (profile := os.environ.get("DD_PROFILE")) is not None:
+        return Path.home() / ".dandori" / profile / "tasks.yaml"
+    return Path.home() / ".dandori" / "tasks.yaml"
+
+
+def get_data_path() -> Path:
+    """データパスを取得します。
+
+    Args:
+        Path: データパス
+    """
+    data_path_str = os.environ.get("DD_DATA_PATH")
+    data_path = default_data_path() if data_path_str is None else Path(data_path_str)
+    if not data_path.exists():
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.touch(exist_ok=False)
+    if not data_path.is_file():
+        _msg = f"Data path not a file: {data_path}"
+        raise NotADirectoryError(_msg)
+    return data_path
+
+
+def default_archive_path() -> Path:
+    """デフォルトのアーカイブパスを取得します。
+
+    Returns:
+        Path: デフォルトのアーカイブパス
+    """
+    if (profile := os.environ.get("DD_PROFILE")) is not None:
+        return Path.home() / ".dandori" / profile / "archive.yaml"
+    return Path.home() / ".dandori" / "archive.yaml"
+
+
+def get_archive_path() -> Path:
+    """アーカイブパスを取得します。
+
+    Args:
+        Path: アーカイブパス
+    """
+    archive_path_str = os.environ.get("DD_ARCHIVE_PATH")
+    archive_path = Path(archive_path_str) if archive_path_str is not None else default_archive_path()
+    if not archive_path.exists():
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_path.touch(exist_ok=False)
+    if not archive_path.is_file():
+        _msg = f"Archive path not a file: {archive_path}"
+        raise NotADirectoryError(_msg)
+    return archive_path
+
+
+def default_home_dir() -> Path:
+    """デフォルトのホームディレクトリを取得します。
+
+    Returns:
+        Path: デフォルトのホームディレクトリ
+    """
+    home_dir = Path.home() / ".dandori"
+    if not home_dir.exists():
+        home_dir.mkdir(parents=True, exist_ok=True)
+    return home_dir
+
+
+def load_config() -> dict[str, str]:
+    """設定ファイルを読み込みます。
+
+    Returns:
+        dict[str, str]: 設定ファイルの設定内容
+    """
+    home_dir = default_home_dir()
+    env_path = home_dir / "config.env"
+    if not env_path.exists():
+        return {}
+    with env_path.open(encoding="utf-8") as f:
+        return dict(line.strip().split("=", 1) for line in f if line.strip() and "=" in line)
+
+
+def load_env() -> dict[str, str]:
+    """環境変数を読み込みます。
+
+    Returns:
+        dict[str, str]: 環境変数の設定内容
+    """
+    # overwrite config with environment variables
+    env: dict[str, str] = load_config() | {
+        "USERNAME": get_username(),
+        "PROFILE": get_profile(),
+        "DATA_PATH": get_data_path().as_posix(),
+        "ARCHIVE_PATH": get_archive_path().as_posix(),
+    }
     return env

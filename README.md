@@ -33,26 +33,33 @@ uv sync
 pip install -e .
 ```
 
-### 環境変数を設定
+## 設定
 
-```bash
-export DD_HOME_DIR=~/.dandori  # デフォルトは ~/.dandori
-export DD_USERNAME=your_username  # デフォルトは anonymous
-export DD_DATA_PATH=~/.dandori/tasks.yaml  # デフォルトは $DD_HOME_DIR/tasks.yaml
-export DD_ARCHIVE_PATH=~/.dandori/archive.yaml  # デフォルトは $DD_HOME_DIR/archive.yaml
-```
+本ツールには、`USERNAME`、`PROFILE`、`DATA_PATH`、`ARCHIVE_PATH` の4つの変数が設定可能です。
+これらの変数は、次の順に決定されるため、必ずしも全ての変数を設定する必要はありません。
 
-### 設定ファイルの作成
+- `USERNAME` の場合：
+    1. CLI コマンドで `--username` オプションを指定した場合
+    2. OS環境変数 `DD_USERNAME` で設定した場合
+    3. OS環境変数 `DD_HOME_DIR` にある設定ファイル `config.env` で `USERNAME` キーで設定した場合
+    4. Python標準ライブラリによる `getpass.getuser()` で取得したユーザー名
+    5. デフォルト値 `anonymous`
 
-[OS環境変数](#環境変数を設定)に上書きされるので注意
+- `PROFILE` の場合：
+    1. CLI コマンドで `--profile` オプションを指定した場合
+    2. OS環境変数 `DD_PROFILE` で設定した場合
+    3. OS環境変数 `DD_HOME_DIR` にある設定ファイル `config.env` で `PROFILE` キーで設定した場合
+    4. デフォルト値 `default`
 
-```bash
-# $DD_HOME_DIR/config.env を作成
-touch $DD_HOME_DIR/config.env
-echo "DD_USERNAME=your_username" >> $DD_HOME_DIR/config.env
-echo "DD_DATA_PATH=$DD_DATA_PATH" >> $DD_HOME_DIR/config.env
-echo "DD_ARCHIVE_PATH=$DD_ARCHIVE_PATH" >> $DD_HOME_DIR/config.env
-```
+- `DATA_PATH` の場合：
+    1. OS環境変数 `DD_DATA_PATH` で設定した場合
+    2. OS環境変数 `DD_HOME_DIR` にある設定ファイル `config.env` で `DATA_PATH` キーで設定した場合
+    3. デフォルト値 `~/.dandori/tasks.yaml` or `~/.dandori/<PROFILE>/tasks.yaml`
+
+- `ARCHIVE_PATH` の場合：
+    1. OS環境変数 `DD_ARCHIVE_PATH` で設定した場合
+    2. OS環境変数 `DD_HOME_DIR` にある設定ファイル `config.env` で `ARCHIVE_PATH` キーで設定した場合
+    3. デフォルト値 `~/.dandori/archive.yaml` or `~/.dandori/<PROFILE>/archive.yaml`
 
 ## 基本的な使い方
 
@@ -65,31 +72,42 @@ echo "DD_ARCHIVE_PATH=$DD_ARCHIVE_PATH" >> $DD_HOME_DIR/config.env
 
 ```text
 src/dandori/
-  api/            # API実装 (将来拡張予定)
-    server.py     # HTTPサーバ実装
-  core/           # ドメインモデルとコアロジック
-    models.py     # Task/Edge のデータクラス
-    ops.py        # コア操作ロジック
-    sort.py       # ソート処理
-    validate.py   # サイクル検出・整合性チェック
-  interfaces/     # 外部インターフェース
-    cli.py        # CLI実装
-    tui.py        # TUI実装
-  io/             # 入出力
-    json_io.py    # JSONエクスポート/インポート
-    std_io.py     # 標準出力フォーマット
-  storage/        # ストレージ層
-    base.py       # Storage インターフェース
-    yaml_store.py # YAML実装
-  util/           # ユーティリティ
-    dirs.py       # ディレクトリ関連
-    ids.py        # ID生成
-    time.py       # 日時処理
+  api/                  # API実装 (将来拡張予定)
+    server.py           # HTTPサーバ実装
+  core/                 # ドメインモデルとコアロジック
+    models.py           # Task/Edge のデータクラス
+    ops.py              # コア操作ロジック
+    sort.py             # ソート処理
+    validate.py         # サイクル検出・整合性チェック
+  interfaces/           # 外部インターフェース
+    cli.py              # CLI実装
+    tui/                # TUI実装
+      app.py            # アプリケーションメイン
+      data.py           # アプリケーションデータ
+      endpoint.py       # エンドポイント
+      helper.py         # ヘルパー
+      style.py          # スタイル
+      view.py           # ビュー
+  io/                   # 入出力
+    json_io.py          # JSONエクスポート/インポート
+    std_io.py           # 標準出力フォーマット
+  storage/              # ストレージ層
+    base.py             # Storage インターフェース
+    sqlite3_store.py    # SQLite実装
+    yaml_store.py       # YAML実装
+  util/                 # ユーティリティ
+    dirs.py             # ディレクトリ関連
+    ids.py              # ID生成
+    time.py             # 日時処理
+    logger.py           # ロギング
+    meta_parser.py      # メタデータパーサ
 ```
 
 ### ストレージ層
 
-現在はYAMLストレージのみ実装済み。SQLiteドライバは将来追加予定。
+現在はYAMLとSQLiteの2つのストレージを実装。
+DBファイルの拡張子が `.yaml` の場合は YAML ストレージ、
+`.db` の場合は SQLite ストレージを使用する。
 
 ストレージは `Storage` インターフェースを実装し、以下のメソッドを提供：
 
@@ -98,6 +116,7 @@ src/dandori/
 - `get_task()`: タスク取得
 - `get_all_tasks()`: 全タスク取得
 - `add_task()`: タスク追加
+- `update_task()`: タスク更新
 - `remove_task()`: タスク削除
 - `link_tasks()`: エッジの追加
 - `unlink_tasks()`: エッジの削除
@@ -162,7 +181,7 @@ pytest --cov=src/dandori
 
 ```bash
 # 型チェック
-mypy src/
+ty check src/
 
 # リント
 ruff check src/

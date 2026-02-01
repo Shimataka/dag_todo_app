@@ -231,6 +231,56 @@ class TestOps(unittest.TestCase):
             ops.update_task("nonexistent", title="タイトル")
         assert "Task not found" in str(exec_info.value)
 
+    def test_remove_task(self) -> None:
+        """タスクを削除できることを確認"""
+        task = ops.add_task([], "タスク")
+        ops.remove_task(task.id)
+        assert task.id not in [t.id for t in ops.list_tasks()]
+
+    def test_remove_task_not_found(self) -> None:
+        """存在しないタスクを削除しようとすると OpsError が発生することを確認"""
+        with pytest.raises(ops.OpsError) as exec_info:
+            ops.remove_task("nonexistent")
+        assert "Task not found" in str(exec_info.value)
+
+    def test_remove_task_with_parents(self) -> None:
+        """親タスクが存在する場合、子タスクは削除されないことを確認"""
+        parent = ops.add_task([], "親")
+        child = ops.add_task([parent.id], "子")
+        ops.remove_task(parent.id)
+        assert parent.id not in [t.id for t in ops.list_tasks()]
+        assert child.id in [t.id for t in ops.list_tasks()]
+        child_updated = ops.get_task(child.id)
+        assert child.id == child_updated.id
+        assert len(child_updated.depends_on) == 0
+
+    def test_remove_task_with_children(self) -> None:
+        """子タスクが存在する場合、親タスクは削除されないことを確認"""
+        parent = ops.add_task([], "親")
+        child = ops.add_task([parent.id], "子")
+        ops.remove_task(child.id)
+        assert parent.id in [t.id for t in ops.list_tasks()]
+        assert child.id not in [t.id for t in ops.list_tasks()]
+        parent_updated = ops.get_task(parent.id)
+        assert parent.id == parent_updated.id
+        assert len(parent_updated.children) == 0
+
+    def test_remove_task_with_parents_and_children(self) -> None:
+        """親タスクと子タスクが存在する場合、両方から削除されることを確認"""
+        parent = ops.add_task([], "親")
+        iam = ops.add_task([parent.id], "自分")
+        child = ops.add_task([iam.id], "子")
+        ops.remove_task(iam.id)
+        assert parent.id in [t.id for t in ops.list_tasks()]
+        assert iam.id not in [t.id for t in ops.list_tasks()]
+        assert child.id in [t.id for t in ops.list_tasks()]
+        parent_updated = ops.get_task(parent.id)
+        assert parent.id == parent_updated.id
+        assert len(parent_updated.children) == 0
+        child_updated = ops.get_task(child.id)
+        assert child.id == child_updated.id
+        assert len(child_updated.depends_on) == 0
+
     # ---- 状態変更 ----
 
     def test_set_status(self) -> None:
@@ -482,7 +532,7 @@ class TestOps(unittest.TestCase):
         parent = ops.add_task([], "親")
         child = ops.add_task([parent.id], "子")
 
-        ops.remove_parent(child.id, parent.id)
+        ops.unlink_parent(child.id, parent.id)
 
         parent_updated = ops.get_task(parent.id)
         child_updated = ops.get_task(child.id)
@@ -492,7 +542,7 @@ class TestOps(unittest.TestCase):
     def test_remove_parent_not_found(self) -> None:
         """存在しない親子関係を削除しようとすると OpsError が発生することを確認"""
         with pytest.raises(ops.OpsError) as exec_info:
-            ops.remove_parent("child", "parent")
+            ops.unlink_parent("child", "parent")
         assert "Task not found" in str(exec_info.value)
 
     def test_remove_child(self) -> None:
@@ -500,7 +550,7 @@ class TestOps(unittest.TestCase):
         parent = ops.add_task([], "親")
         child = ops.add_task([parent.id], "子")
 
-        ops.remove_child(parent.id, child.id)
+        ops.unlink_child(parent.id, child.id)
 
         parent_updated = ops.get_task(parent.id)
         child_updated = ops.get_task(child.id)
@@ -510,7 +560,7 @@ class TestOps(unittest.TestCase):
     def test_remove_child_not_found(self) -> None:
         """存在しない子タスクを削除しようとすると OpsError が発生することを確認"""
         with pytest.raises(ops.OpsError) as exec_info:
-            ops.remove_child("parent", "child")
+            ops.unlink_child("parent", "child")
         assert "Task not found" in str(exec_info.value)
 
 

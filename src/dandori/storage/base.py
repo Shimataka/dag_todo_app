@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from pyresults import Result
 
 from dandori.core.models import Task
-from dandori.util.dirs import ensure_dirs, load_env
+from dandori.util.dirs import load_env
 
 
 class Store(ABC):
@@ -33,7 +33,6 @@ class Store(ABC):
         data_path: str | None = None,
         archive_path: str | None = None,
     ) -> None:
-        ensure_dirs()
         env = load_env()
         self.data_path = data_path or env["DATA_PATH"]
         self.archive_path = archive_path or env["ARCHIVE_PATH"]

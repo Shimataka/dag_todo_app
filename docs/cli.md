@@ -1,5 +1,31 @@
 # CLI コマンド
 
+```bash
+# pythonで実行
+python -m dandori
+
+# uvで実行
+uv run dandori
+
+# エイリアス
+alias dandori="python -m dandori" # or `alias dandori="uv run dandori"`
+dandori
+```
+
+## バージョン
+
+```bash
+dandori --version
+dandori -v
+```
+
+## ヘルプ
+
+```bash
+dandori -h
+dandori --help
+```
+
 ## タスクの追加
 
 ```bash

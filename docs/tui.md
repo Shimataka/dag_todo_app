@@ -1,5 +1,17 @@
 # TUI 使い方
 
+```bash
+# pythonで実行
+python -m dandori
+
+# uvで実行
+uv run dandori
+
+# エイリアス
+alias dandori="python -m dandori" # or `alias dandori="uv run dandori"`
+dandori
+```
+
 ## 起動
 
 ```bash
@@ -31,7 +43,7 @@ dandori tui
 - `[`: 詳細表示を上にスクロール（3行）
 - `]`: 詳細表示を下にスクロール（3行）
 
-## フィルタ
+## リストフィルタ
 
 ### ステータスフィルタ (`f (forward) / F (reverse)`)
 
@@ -47,13 +59,35 @@ dandori tui
 
 - `active` → `archived` → `all` → `active`
 
+### トポロジカル順フィルタ (`t`)
+
+トポロジカル順 (タスクの依存関係に沿った並べ方で、親→子の順に並べる) でフィルタ:
+
+- `on` → `off`
+
 ### リクエストフィルタ (`r`)
 
 `requested` ステータスのタスクのみ表示するフィルタをトグル
 
-### トポロジカルソート (`t`)
+- `on` → `off`
 
-依存関係に基づくトポロジカル順での表示をトグル
+#### 準備完了フィルタ (`y`)
+
+準備完了 (親タスクがすべて完了している) のタスクのみ表示するフィルタをトグル
+
+- `on` → `off`
+
+### ボトルネックフィルter (`b`)
+
+ボトルネック (未完了の子タスクを持つ未完了タスク) のタスクのみ表示するフィルタをトグル
+
+- `on` → `off`
+
+### 弱連結成分フィルter (`c`)
+
+弱連結成分 (そのタスクを起点とした依存関係の独立したグループ) のタスクのみ表示するフィルタをトグル
+
+- `on` → `off`
 
 ## タスク操作
 
@@ -64,12 +98,12 @@ dandori tui
 
 追加ダイアログで入力可能な項目：
 
-- Title（必須）
-- Priority (0-9)
-- Start Date (ISO形式)
-- Due Date (ISO形式)
-- Tags (カンマ区切り)
-- Description
+- Title（必須）: タスクのタイトルで、必ず入力する。
+- Priority (0-9): タスクの優先度で、0-9の整数を入力する。数字が大きいほど優先する。
+- Start Date (ISO形式): タスクの開始日で、`YYYY-MM-DDTHH:MM:SS` 形式で入力する。
+- Due Date (ISO形式): タスクの期限で、`YYYY-MM-DDTHH:MM:SS` 形式で入力する。
+- Tags (カンマ区切り): タスクのタグで、カンマ (,) 区切りで入力する。
+- Description: 自由記述欄
 
 ### タスクの編集
 
@@ -77,25 +111,25 @@ dandori tui
 
 編集ダイアログで変更可能な項目：
 
-- Title（必須）
-- Priority
-- Start Date
-- Due Date
-- Tags
-- Description
-- Depends on (first 6-chars or full ID, ',' separated)
-- Children (first 6-chars or full ID, ',' separated)
+- Title（必須）: タスクのタイトルで、必ず入力する。
+- Priority: タスクの優先度で、0-9の整数を入力する。数字が大きいほど優先する。
+- Start Date: タスクの開始日で、`YYYY-MM-DDTHH:MM:SS` 形式で入力する。
+- Due Date: タスクの期限で、`YYYY-MM-DDTHH:MM:SS` 形式で入力する。
+- Tags: タスクのタグで、カンマ (,) 区切りで入力する。
+- Description: 自由記述欄
+- Depends on (first 8-chars or full ID, ',' separated): 親タスクのIDで、カンマ (,) 区切りで入力する。
+- Children (first 8-chars or full ID, ',' separated): 子タスクのIDで、カンマ (,) 区切りで入力する。
 
 ### ステータス変更
 
-- `p`: ステータスを `pending` に変更
-- `i`: ステータスを `in_progress` に変更
-- `d`: ステータスを `done` に変更
+- `P`: ステータスを `pending` に変更
+- `I`: ステータスを `in_progress` に変更
+- `D`: ステータスを `done` に変更
 
 ### アーカイブ
 
-- `x`: 現在選択中のタスクを含む連結成分（ツリー）をアーカイブ
-- `u`: 現在選択中のタスクを含む連結成分（ツリー）をアーカイブ解除
+- `X`: 現在選択中のタスクを含む連結成分（ツリー）をアーカイブ
+- `U`: 現在選択中のタスクを含む連結成分（ツリー）をアーカイブ解除
 
 ### リクエスト
 
@@ -103,7 +137,7 @@ dandori tui
 
 リクエストダイアログで入力可能な項目：
 
-- Assignee: 担当者名
+- Assignee: 依頼先の担当者名
 - Note: メモ
 
 ## 表示
@@ -138,7 +172,7 @@ dandori tui
   - `R` (requested)
   - `X` (removed)
   - `A` (archived)
-- **タスクID**: 先頭6文字
+- **タスクID**: 先頭8文字
 - **タイトル**
 
 色分け：

@@ -107,6 +107,7 @@ class App:
             ready_only=self.state.filter.ready_only,
             bottleneck_only=self.state.filter.bottleneck_only,
             component_of=self.state.filter.component_task_id,
+            tags_any=self.state.filter.tags if self.state.filter.tags else None,
         )
 
         # clamp / restore selection index
@@ -387,6 +388,28 @@ class App:
         self.state.dialog_offset = 0
         self.state.mode = "dialog"
 
+    def _start_filter_tags_dialog(self) -> None:
+        """Open dialog to filter by tags"""
+        # 現在のタグフィルタを初期値として利用
+        initial_tags = ", ".join(self.state.filter.tags)
+        fields = [
+            FieldState(
+                name="tags",
+                label="Tags (',' separated) ",
+                buffer=initial_tags,
+                cursor=len(initial_tags),
+            ),
+        ]
+        self.state.dialog = DialogState(
+            kind="filter_tags",
+            title="Filter by Tags",
+            fields=fields,
+            current_index=0,
+            target_task_id=None,
+        )
+        self.state.dialog_offset = 0
+        self.state.mode = "dialog"
+
     def _parse_field(
         self,
         values: dict[str, str],
@@ -543,6 +566,17 @@ class App:
             else:
                 self.state.msg_footer = f"Updated: {task.id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)}"
                 self._reload_tasks(keep_task_id=task.id)
+        elif dlg.kind == "filter_tags":
+            # tags filter
+            tags_str = values.get("tags", "")
+            if tags_str:
+                tags_list = [t.strip() for t in tags_str.split(",") if t.strip()]
+                self.state.filter.tags = tags_list
+                self.state.msg_footer = f"Filter tags: {', '.join(tags_list) if tags_list else 'off'}"
+            else:
+                self.state.filter.tags = []
+                self.state.msg_footer = "Filter tags: off"
+            self._reload_tasks()
         elif dlg.kind == "request":
             # title (required)
             if dlg.target_task_id is None:
@@ -869,6 +903,9 @@ class App:
         elif key in (ord("c"),):
             # component task ID toggle
             self._toggle_component_filter()
+        elif key in (ord("g"),):
+            # tag filter dialog
+            self._start_filter_tags_dialog()
 
         # change status
         elif key in (ord("P"),):

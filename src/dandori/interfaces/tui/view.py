@@ -187,6 +187,9 @@ class AppView:
             else f.component_task_id[:LENGTH_SHORTEND_ID].ljust(LENGTH_SHORTEND_ID)
         )
 
+        # tags表示
+        tags_label = ", ".join(f.tags) if f.tags else "off"
+
         title = HeaderLines.title(self.state.profile)
         status = HeaderLines.status(
             status_label,
@@ -196,6 +199,7 @@ class AppView:
             ready_label,
             bottleneck_label,
             component_label,
+            tags_label,
         )
         helps = HeaderLines.help()
 

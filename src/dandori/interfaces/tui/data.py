@@ -12,6 +12,7 @@ DialogKind = Literal[
     "add",
     "edit",
     "request",
+    "filter_tags",
 ]
 
 

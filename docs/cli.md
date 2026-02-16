@@ -55,6 +55,10 @@ dandori list --details
 
 # トポロジカル順で表示
 dandori list --topo
+
+# タグでフィルタリング
+dandori list --tag "タグ1" --tag "タグ2"
+dandori list --tag-all "タグ1" --tag-all "タグ2"
 ```
 
 ## タスクの表示・更新

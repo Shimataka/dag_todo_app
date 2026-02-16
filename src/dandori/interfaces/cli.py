@@ -13,6 +13,7 @@ from dandori.core.ops import (
     get_task,
     insert_between,
     link_parents,
+    list_tags,
     list_tasks,
     remove_task,
     set_requested,
@@ -87,6 +88,8 @@ def cmd_list(args: argparse.Namespace) -> int:
             )
             if args.component
             else None,
+            tags_any=args.tag if args.tag else None,
+            tags_all=args.tag_all if args.tag_all else None,
         )
 
         # query フィルタ(ops.list_tasks にはないので後でフィルタ)
@@ -482,6 +485,34 @@ def cmd_check(args: argparse.Namespace) -> int:  # noqa: ARG001
     return 0
 
 
+def cmd_tags(args: argparse.Namespace) -> int:
+    try:
+        archived = None
+        if args.archived == "true":
+            archived = True
+        elif args.archived == "false":
+            archived = False
+        elif args.archived == "all":
+            archived = None
+
+        tag_counts = list_tags(archived=archived)
+        if not tag_counts:
+            print("No tags found.")
+            return 0
+
+        # 件数でソート (降順) 、次にタグ名でソート (昇順)
+        sorted_tags = sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))
+        for tag, count in sorted_tags:
+            print(f"{tag}: {count}")
+
+    except OpsError as e:
+        _msg = f"An error occurred while listing tags: {e!s}"
+        logger.exception(_msg)
+        return 1
+    else:
+        return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     try:
         return tui.run(args)
@@ -495,12 +526,18 @@ def set_env(key: str, value: str) -> None:
     os.environ[key] = value
 
 
+def show_env() -> str:
+    env = load_env()
+    return "\n".join(f"{k}={v}" for k, v in env.items())
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--debug", action="store_true", help="debug mode")
     p.add_argument("-u", "--username", help="username")
     p.add_argument("-p", "--profile", help="profile")
+    p.add_argument("-e", "--env", action="version", version=show_env(), help="show environment variables")
 
     # subargs
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -529,6 +566,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--ready", action="store_true", help="show ready tasks only")
     sp.add_argument("--bottleneck", action="store_true", help="show bottleneck tasks only")
     sp.add_argument("--component", help="show tasks in component containing ID")
+    sp.add_argument("--tag", action="append", help="filter by tag (OR condition, can be specified multiple times)")
+    sp.add_argument(
+        "--tag-all",
+        action="append",
+        help="filter by tag (AND condition, can be specified multiple times)",
+    )
     sp.set_defaults(func=cmd_list)
 
     # show
@@ -620,6 +663,11 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     sp = sub.add_parser("check", help="check DAG for cycles and inconsistencies")
     sp.set_defaults(func=cmd_check)
+
+    # tags
+    sp = sub.add_parser("tags", help="list tags and counts")
+    sp.add_argument("--archived", choices=["true", "false", "all"], default="false", help="filter by archived status")
+    sp.set_defaults(func=cmd_tags)
 
     # tui
     sp = sub.add_parser("tui", help="run TUI")

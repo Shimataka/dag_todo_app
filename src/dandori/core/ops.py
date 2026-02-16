@@ -28,6 +28,16 @@ class OpsError(Exception):
 # ---- 内部ユーティリティ ----------------------------------------------------
 
 
+def _normalize_tag(tag: str) -> str:
+    """タグを正規化する（lower + strip）。"""
+    return tag.strip().lower()
+
+
+def _normalize_tags(tags: list[str]) -> list[str]:
+    """タグリストを正規化する（空要素を除去）。"""
+    return [_normalize_tag(t) for t in tags if t.strip()]
+
+
 def _is_ready(task: Task, all_tasks: dict[str, Task]) -> bool:
     not_completed = ("pending", "requested", "in_progress")
     completed = ("done", "removed")
@@ -94,11 +104,24 @@ def list_tasks(  # noqa: C901
     ready_only: bool = False,
     bottleneck_only: bool = False,
     component_of: str | None = None,
+    tags_any: list[str] | None = None,
+    tags_all: list[str] | None = None,
 ) -> list[Task]:
     """タスク一覧を取得するユースケース。
 
-    status / archived / topo / requested_only を組み合わせてフィルタ・ソートする。
+    status / archived / topo / requested_only / tags_any / tags_all を組み合わせてフィルタ・ソートする。
     TUI・REST の両方から利用する想定。
+
+    Args:
+        status: ステータスでフィルタ (None=すべて/pending/in_progress/done/requested/removed)
+        archived: アーカイブ状態でフィルタ (None=すべて/False=unarchived/True=archived)
+        topo: トポロジカルソートでフィルタ
+        requested_only: requested ステータスのみ表示フラグ
+        ready_only: ready タスクのみ表示フラグ
+        bottleneck_only: bottleneck タスクのみ表示フラグ
+        component_of: 弱連結成分フィルタのタスクID
+        tags_any: いずれかのタグを含むタスクを抽出 (OR条件)
+        tags_all: すべてのタグを含むタスクを抽出 (AND条件)
     """
     st = get_store()
     st.load()
@@ -142,6 +165,16 @@ def list_tasks(  # noqa: C901
     if component_ids is not None:
         all_tasks = [t for t in all_tasks if t.id in component_ids]
 
+    # tags_any でフィルタ (OR条件)
+    if tags_any is not None and len(tags_any) > 0:
+        query_tags_norm = set(_normalize_tags(tags_any))
+        all_tasks = [t for t in all_tasks if query_tags_norm & set(_normalize_tags(t.tags)) != set()]
+
+    # tags_all でフィルタ (AND条件)
+    if tags_all is not None and len(tags_all) > 0:
+        query_tags_norm = set(_normalize_tags(tags_all))
+        all_tasks = [t for t in all_tasks if query_tags_norm <= set(_normalize_tags(t.tags))]
+
     # ソート
     if topo:  # noqa: SIM108
         tasks = topo_sort({t.id: t for t in all_tasks})
@@ -149,6 +182,39 @@ def list_tasks(  # noqa: C901
         tasks = sorted(all_tasks, key=lambda t: task_sort_key(t))
 
     return tasks
+
+
+def list_tags(
+    *,
+    archived: bool | None = None,
+) -> dict[str, int]:
+    """タグ一覧と件数を取得するユースケース。
+
+    Args:
+        archived: アーカイブ状態でフィルタ（None=すべて）
+
+    Returns:
+        タグ名をキー、件数を値とする辞書
+    """
+    st = get_store()
+    st.load()
+
+    all_tasks_dict = st.get_all_tasks().unwrap_or(default={})
+    all_tasks = list[Task](all_tasks_dict.values())
+
+    # archived フラグでフィルタ
+    if archived is not None:
+        all_tasks = [t for t in all_tasks if t.is_archived == archived]
+
+    # タグを集計
+    tag_counts: dict[str, int] = {}
+    for task in all_tasks:
+        for tag in task.tags:
+            tag_norm = _normalize_tag(tag)
+            if tag_norm:
+                tag_counts[tag_norm] = tag_counts.get(tag_norm, 0) + 1
+
+    return tag_counts
 
 
 def get_task(task_id: str) -> Task:

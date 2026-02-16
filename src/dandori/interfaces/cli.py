@@ -526,12 +526,18 @@ def set_env(key: str, value: str) -> None:
     os.environ[key] = value
 
 
+def show_env() -> str:
+    env = load_env()
+    return "\n".join(f"{k}={v}" for k, v in env.items())
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dandori", description="DAG-based task manager")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--debug", action="store_true", help="debug mode")
     p.add_argument("-u", "--username", help="username")
     p.add_argument("-p", "--profile", help="profile")
+    p.add_argument("-e", "--env", action="version", version=show_env(), help="show environment variables")
 
     # subargs
     sub = p.add_subparsers(dest="cmd", required=True)

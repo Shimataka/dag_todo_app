@@ -56,6 +56,7 @@ class HeaderLines:
         ready_label: str,
         bottleneck_label: str,
         component_label: str,
+        tags_label: str,
     ) -> str:
         return cls._status_line(
             status_label,
@@ -65,6 +66,7 @@ class HeaderLines:
             ready_label,
             bottleneck_label,
             component_label,
+            tags_label,
         )
 
     @classmethod
@@ -81,6 +83,7 @@ class HeaderLines:
         ready_label: str,
         bottleneck_label: str,
         component_label: str,
+        tags_label: str,
     ) -> str:
         return "".join(
             [
@@ -91,7 +94,8 @@ class HeaderLines:
                 f"[(r)equested: {req_label}] ",
                 f"[(y)ready: {ready_label}] ",
                 f"[(b)ottleneck: {bottleneck_label}] ",
-                f"[(c)omponent: {component_label}]",
+                f"[(c)omponent: {component_label}] ",
+                f"[(g)tags: {tags_label}]",
             ],
         )
 

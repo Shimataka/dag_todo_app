@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from dandori.core.models import Task
+from dandori.core.status import Status
 
 Mode = Literal[
     "list",
@@ -26,7 +27,9 @@ class OverlayState:
 
 @dataclass
 class FilterState:
-    status: str | None = None  # None=すべて/pending/in_progress/done/requested/removed ステータスフィルタ
+    status: Status | None = (
+        None  # None=すべて/new/pending/in_progress/done/reviewed/requested/removed ステータスフィルタ
+    )
     archived: bool | None = None  # None=すべて/False=unarchived/True=archived
     requested_only: bool = False  # requested ステータスのみ表示フラグ
     topo: bool = False  # トポロジカルソート表示フラグ

@@ -3,6 +3,7 @@ import locale
 from dataclasses import dataclass
 
 from dandori.core.models import Task
+from dandori.core.status import TERMINAL_STATUSES, status_mark
 from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState
 from dandori.interfaces.tui.helper import _string_width
@@ -15,7 +16,6 @@ from dandori.interfaces.tui.style import (
     MAX_OVERLAY_BOX_WIDTH,
     OVERLAY_BG_COLOR,
     REQUESTED_COLOR,
-    STATUS_MARK_MAP,
     SURPRESSED_COLOR,
     WAITING_COLOR,
     WORKING_COLOR,
@@ -152,9 +152,11 @@ class AppView:
         # status表示
         status_label_map = {
             None: "all",
+            "new": "new",
             "pending": "pending",
             "in_progress": "in_progress",
             "done": "done",
+            "reviewed": "reviewed",
             "requested": "requested",
             "removed": "removed",
         }
@@ -282,7 +284,7 @@ class AppView:
                 elif t.status == "pending":
                     attrs |= curses.color_pair(WAITING_COLOR)
                 # removed
-                elif t.is_archived:
+                elif t.status in TERMINAL_STATUSES or t.is_archived:
                     attrs |= curses.color_pair(SURPRESSED_COLOR)
 
                 # selected
@@ -314,10 +316,7 @@ class AppView:
 
     def _format_list_line(self, t: Task, width: int) -> str:
         # status / archived marks
-        marks: list[str] = []
-        if t.is_archived:
-            marks.append("A")
-        status_str = STATUS_MARK_MAP.get(t.status, "-")
+        status_str = status_mark(t.status, archived=t.is_archived)
 
         short_id = t.id[:LENGTH_SHORTEND_ID]
         title = t.title.replace("\n", "")

@@ -19,6 +19,7 @@ from dandori.core.ops import (
     unarchive_tree,
     update_task,
 )
+from dandori.core.status import STATUS_DISPLAY_ORDER, STATUS_MARK_MAP, Status
 from dandori.interfaces import LENGTH_SHORTEND_ID
 from dandori.interfaces.tui.data import AppState, DialogState, FieldState, OverlayState
 from dandori.interfaces.tui.style import HeaderLines
@@ -34,15 +35,6 @@ locale.setlocale(locale.LC_ALL, "")
 T = TypeVar("T")
 V = TypeVar("V")
 
-
-STATUS_MARK_MAP = {
-    "pending": "-",
-    "in_progress": "I",
-    "done": "D",
-    "requested": "R",
-    "removed": "X",
-    "archived": "A",
-}
 
 MAIN_THEME_COLOR = 1
 ADD_TASK_COLOR = 4
@@ -121,7 +113,7 @@ class App:
         """Reload tasks from backend according to filter."""
         # FilterState に基づいて core.ops.list_tasks() を呼んで state.tasks を更新
         self.state.tasks = list_tasks(
-            status=self.state.filter.status,  # type: ignore[arg-type]
+            status=self.state.filter.status,
             archived=self.state.filter.archived,
             topo=self.state.filter.topo,
             requested_only=self.state.filter.requested_only,
@@ -776,8 +768,11 @@ class App:
     # ---- filter helpers -------------------------------------------------
 
     def _cycle_status_filter(self, *, reverse: bool = False) -> None:
-        """Cycle status filter: all -> pending -> in_prog -> done -> requested -> all."""
-        order: list[str | None] = [None, "pending", "in_progress", "done", "requested"]
+        """Cycle status filter
+
+        all -> new -> pending -> in_progress -> done -> reviewed -> requested -> removed -> all... (circular)
+        """
+        order: list[Status | None] = [None, *list(STATUS_DISPLAY_ORDER)]
         current = self.state.filter.status
         try:
             idx = order.index(current)
@@ -788,10 +783,13 @@ class App:
 
         label_map = {
             None: "all",
+            "new": "new",
             "pending": "pending",
-            "in_progress": "in_prog",
+            "in_progress": "in_progress",
             "done": "done",
+            "reviewed": "reviewed",
             "requested": "requested",
+            "removed": "removed",
         }
         label = label_map.get(self.state.filter.status, "all")
         self.state.msg_footer = f"Filter: status={label}"
@@ -956,6 +954,9 @@ class App:
             self._start_filter_tags_dialog()
 
         # change status
+        elif key in (ord("*"),):  # hidden key
+            # new
+            self._set_status("new")
         elif key in (ord("P"),):
             # pending
             self._set_status("pending")
@@ -965,6 +966,12 @@ class App:
         elif key in (ord("D"),):
             # done
             self._set_status("done")
+        elif key in (ord("V"),):
+            # reviewed
+            self._set_status("reviewed")
+        elif key in (ord("!"),):
+            # removed
+            self._set_status("removed")
         elif key in (ord("X"),):
             # archive tree
             self._toggle_archive_tree(archive=True)

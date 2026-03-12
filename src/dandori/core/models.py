@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import Any
 
+from dandori.core.status import Status, get_initial_status
 from dandori.util.ids import gen_task_id
 from dandori.util.time import now_iso
 
@@ -17,7 +18,7 @@ class Task:
     due_date: str | None = None
     start_at: str | None = None
     priority: int | None = None
-    status: Literal["pending", "in_progress", "done", "requested", "removed"] = "pending"
+    status: Status = field(default_factory=get_initial_status)
     depends_on: list[str] = field(default_factory=list)  # 複数親OK
     children: list[str] = field(default_factory=list)  # 複数子OK
     is_archived: bool = False

@@ -1,12 +1,3 @@
-STATUS_MARK_MAP = {
-    "pending": "-",
-    "in_progress": "I",
-    "done": "D",
-    "requested": "R",
-    "removed": "X",
-    "archived": "A",
-}
-
 MAIN_THEME_COLOR = 1
 ADD_TASK_COLOR = 4
 SELECTED_ROW_COLOR = 3
@@ -110,6 +101,8 @@ class HeaderLines:
         help_line += "[(P)end] "
         help_line += "[(I)n_progress] "
         help_line += "[(D)one] "
+        help_line += "[Re(V)iew] "
+        help_line += "[(!)Remove] "
         help_line += "[(X)archive] "
         help_line += "[(U)narchive]"
         return help_line

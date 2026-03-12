@@ -22,6 +22,7 @@ from dandori.core.ops import (
     unlink_parent,
     update_task,
 )
+from dandori.core.status import STATUS_DISPLAY_ORDER, status_mark
 from dandori.core.validate import detect_cycles, detect_inconsistencies
 from dandori.interfaces import LENGTH_SHORTEND_ID, tui
 from dandori.io.json_io import export_json, import_json
@@ -103,18 +104,7 @@ def cmd_list(args: argparse.Namespace) -> int:
                 print_task(t)
                 print("-" * 76)
                 continue
-            marks = []
-            if t.is_archived:
-                marks.append("A")
-            if t.status == "requested":
-                marks.append("R")
-            if t.status == "in_progress":
-                marks.append("I")
-            if t.status == "done":
-                marks.append("D")
-            if t.status == "pending":
-                marks.append("P")
-            tag = "[" + ",".join(marks) + "]" if marks else " "
+            tag = f"[{status_mark(t.status)}]"
             assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
             sla = format_requested_sla(t)
             extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
@@ -262,6 +252,22 @@ def cmd_done(args: argparse.Namespace) -> int:
         print(f"done: {args_id}")
     except OpsError as e:
         _msg = f"An error occurred while marking a task as done: {e!s}"
+        logger.exception(_msg)
+        return 1
+    else:
+        return 0
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    try:
+        args_id = parse_id_with_msg(
+            args.id,
+            source_ids=[t.id for t in list_tasks()],
+        )
+        set_status(args_id, "reviewed")
+        print(f"reviewed: {args_id}")
+    except OpsError as e:
+        _msg = f"An error occurred while marking a task as reviewed: {e!s}"
         logger.exception(_msg)
         return 1
     else:
@@ -557,7 +563,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # list
     sp = sub.add_parser("list", help="list tasks")
-    sp.add_argument("--status", choices=["pending", "in_progress", "done", "requested", "removed"])
+    sp.add_argument("--status", choices=list(STATUS_DISPLAY_ORDER))
     sp.add_argument("--archived", type=lambda x: x.lower() in ("1", "true", "yes"), default=None)
     sp.add_argument("--query")
     sp.add_argument("--details", action="store_true", help="show detailed information")
@@ -588,7 +594,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", help="start date in ISO format")
     sp.add_argument("--priority", type=int, help="priority of the task")
     sp.add_argument("--tags", nargs="*", help="tags (',' separated)")
-    sp.add_argument("--status", choices=["pending", "in_progress", "done", "requested", "removed"])
+    sp.add_argument("--status", choices=list(STATUS_DISPLAY_ORDER))
     sp.add_argument("--assign-to")
     sp.add_argument("--requested-by")
     sp.add_argument("--requested-note")
@@ -612,6 +618,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("done", help="mark done")
     sp.add_argument("id")
     sp.set_defaults(func=cmd_done)
+
+    # review
+    sp = sub.add_parser("review", help="mark reviewed")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_review)
 
     # insert
     sp = sub.add_parser("insert", help="insert between A and B")

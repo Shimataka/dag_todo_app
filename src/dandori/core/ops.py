@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pyresults import Err, Ok, Result
 
 from dandori.core.models import Task
 from dandori.core.sort import task_sort_key, topo_sort
+from dandori.core.status import (
+    can_transition,
+    can_unlock_children,
+    is_active_status,
+)
 from dandori.storage import Store, get_store
 from dandori.util.dirs import load_env
 from dandori.util.ids import gen_task_id
@@ -16,8 +21,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
 
+    from dandori.core.status import Status
 
-Status = Literal["pending", "in_progress", "done", "requested", "removed"]
+
 PREFIX_REQUEST_NOTE = "[request-note]"
 
 
@@ -39,26 +45,25 @@ def _normalize_tags(tags: list[str]) -> list[str]:
 
 
 def _is_ready(task: Task, all_tasks: dict[str, Task]) -> bool:
-    not_completed = ("pending", "requested", "in_progress")
-    completed = ("done", "removed")
     if task.is_archived:
         return False
-    if task.status not in not_completed:
+    if not is_active_status(task.status):
         return False
     for pid in task.depends_on:
         parent = all_tasks.get(pid)
-        if parent is None or ((parent.status not in completed) and not parent.is_archived):
+        if parent is None:
+            return False
+        if not parent.is_archived and not can_unlock_children(parent.status):
             return False
     return True
 
 
 def _is_bottleneck(task: Task, all_tasks: dict[str, Task]) -> bool:
-    not_completed = ("pending", "requested", "in_progress")
-    if task.status not in not_completed:
+    if not is_active_status(task.status):
         return False
     for child_id in task.children:
         child = all_tasks.get(child_id)
-        if child and child.status in not_completed and not child.is_archived:
+        if child and is_active_status(child.status) and not child.is_archived:
             return True
     return False
 
@@ -433,6 +438,9 @@ def set_status(task_id: str, status: Status) -> Task:
     """
 
     def _mutate(t: Task) -> None:
+        if not can_transition(t.status, status):
+            _msg = f"Invalid status transition: {t.status} -> {status}"
+            raise OpsError(_msg)
         # in-progress --> start_at を now に設定
         if status == "in_progress" and t.status in ("pending", None):
             t.start_at = now_iso()

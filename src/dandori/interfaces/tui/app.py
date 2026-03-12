@@ -1,6 +1,7 @@
 import argparse
 import curses
 import locale
+import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import TypeVar
@@ -69,6 +70,9 @@ class App:
         self.args = args
         self.state = AppState(profile=env.get("PROFILE", "default"))
         self.view = AppView(stdscr, self.state)
+        self.watch_interval_sec = self._normalize_watch_interval(args)
+        self.last_auto_reload_at = time.monotonic()
+        self.state.watch_msg = self._make_watch_msg()
         self._init_curses()
         self._reload_tasks()
 
@@ -95,6 +99,23 @@ class App:
             curses.init_pair(WAITING_COLOR, 15, -1)  # pending
             curses.init_pair(DIALOG_BG_COLOR, -1, 236)  # dialog-bg
             curses.init_pair(OVERLAY_BG_COLOR, -1, 236)  # overlay-bg
+
+    def _normalize_watch_interval(self, args: argparse.Namespace | None) -> int | None:
+        """Normalize watch interval."""
+        if args is None:
+            return None
+        raw = getattr(args, "watch", None)
+        if raw is None or raw <= 0.0:
+            return None
+        return max(1, int(raw))  # at least 1 second
+
+    def _make_watch_msg(self) -> str:
+        if self.watch_interval_sec is None:
+            return "off"
+        return f"{self.watch_interval_sec}s"
+
+    def _touch_watch_clock(self) -> None:
+        self.last_auto_reload_at = time.monotonic()
 
     def _reload_tasks(self, keep_task_id: str | None = None) -> None:
         """Reload tasks from backend according to filter."""
@@ -138,6 +159,30 @@ class App:
         # reload時は先頭から表示し直す
         self.state.list_offset = 0
         self.state.detail_offset = 0
+
+    def maybe_auto_reload(self) -> None:
+        """Auto reload task list when watch interval has elapsed."""
+        if self.watch_interval_sec is None:
+            return
+
+        # No reload at "dialog" or "overlay" mode
+        if self.state.mode != "list":
+            return
+
+        now = time.monotonic()
+        if now - self.last_auto_reload_at < self.watch_interval_sec:
+            return
+
+        current = self.view.current_task()
+        keep_task_id = current.id if current is not None else None
+        try:
+            self._reload_tasks(keep_task_id=keep_task_id)
+        except OpsError as e:
+            self.state.msg_footer = f"Error (auto reload): {e}"
+        else:
+            self.state.msg_footer = f"Auto reloaded (watch={self.state.watch_msg})"
+        finally:
+            self._touch_watch_clock()
 
     # ---- overlay helpers ------------------------------------------------
 
@@ -842,6 +887,9 @@ class App:
         if self.state.mode == "overlay" and self.state.overlay is not None:
             self._handle_overlay_key(key)
             return True
+
+        # touch watch clock
+        self._touch_watch_clock()
 
         # key に応じて state を更新し、必要なら ops を呼ぶ
         # True を返したら継続、False ならループ終了

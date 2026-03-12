@@ -40,10 +40,11 @@ class HeaderLines:
         return 3
 
     @classmethod
-    def title(cls, profile: str) -> str:
+    def title(cls, profile: str, watch_label: str) -> str:
         _title = f"profile: {profile} >>> "
         _title += "--- dandori (TUI) > Topological graph TODO task manager ---"
         _title += " [↑/↓ Move, [/] Scroll] [re(l)oad] [(q)uit]"
+        _title += f" [watch={watch_label}]" if watch_label else ""
         return _title
 
     @classmethod
@@ -92,10 +93,10 @@ class HeaderLines:
                 f"[(a)rchived: {archived_label}] ",
                 f"[(t)opo: {topo_label}] ",
                 f"[(r)equested: {req_label}] ",
-                f"[(y)ready: {ready_label}] ",
+                f"[read(y): {ready_label}] ",
                 f"[(b)ottleneck: {bottleneck_label}] ",
                 f"[(c)omponent: {component_label}] ",
-                f"[(g)tags: {tags_label}]",
+                f"[ta(g)s: {tags_label}]",
             ],
         )
 

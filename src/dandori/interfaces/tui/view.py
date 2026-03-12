@@ -190,7 +190,10 @@ class AppView:
         # tags表示
         tags_label = ", ".join(f.tags) if f.tags else "off"
 
-        title = HeaderLines.title(self.state.profile)
+        # watch表示
+        watch_label = self.state.watch_msg or "off"
+
+        title = HeaderLines.title(self.state.profile, watch_label)
         status = HeaderLines.status(
             status_label,
             archived_label,
@@ -210,6 +213,12 @@ class AppView:
         self._safe_addnstr(y + 2, 0, helps.ljust(width), width)
         if curses.has_colors():
             self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
+
+    def _watch_label(self) -> str:
+        app = getattr(self.state, "_app", None)
+        if app is None:
+            return "off"
+        return app.state.watch_msg or "off"
 
     def _draw_footer(self, y: int, width: int) -> None:
         msg = self.state.msg_footer or ""

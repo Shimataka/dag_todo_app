@@ -16,6 +16,10 @@ dandori
 
 ```bash
 dandori tui
+
+# オプション
+# 10秒ごとにタスク一覧を自動更新 (<0: 無効)
+dandori tui --watch 10
 ```
 
 ## 画面構成

@@ -316,10 +316,7 @@ class AppView:
 
     def _format_list_line(self, t: Task, width: int) -> str:
         # status / archived marks
-        marks: list[str] = []
-        if t.is_archived:
-            marks.append("A")
-        status_str = status_mark(t.status)
+        status_str = status_mark(t.status, archived=t.is_archived)
 
         short_id = t.id[:LENGTH_SHORTEND_ID]
         title = t.title.replace("\n", "")

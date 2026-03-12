@@ -671,6 +671,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # tui
     sp = sub.add_parser("tui", help="run TUI")
+    sp.add_argument(
+        "--watch",
+        type=int,
+        default=0,
+        help="auto reload task list every N seconds (0: disable)",
+    )
     sp.set_defaults(func=cmd_tui)
 
     return p

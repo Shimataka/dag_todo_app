@@ -190,7 +190,10 @@ class AppView:
         # tags表示
         tags_label = ", ".join(f.tags) if f.tags else "off"
 
-        title = HeaderLines.title(self.state.profile)
+        # watch表示
+        watch_label = self.state.watch_msg or "off"
+
+        title = HeaderLines.title(self.state.profile, watch_label)
         status = HeaderLines.status(
             status_label,
             archived_label,

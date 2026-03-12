@@ -16,6 +16,10 @@ dandori
 
 ```bash
 dandori tui
+
+# オプション
+# キー操作せずに10秒経つとタスク一覧を自動更新 (<=0: 無効)
+dandori tui --watch 10
 ```
 
 ## 画面構成

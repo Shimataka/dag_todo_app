@@ -67,6 +67,7 @@ class AppState:
 
     # UI用
     msg_footer: str | None = None  # フッターメッセージ表示
+    watch_msg: str | None = None  # watch message
     window_list_width: int = 0
     window_list_height: int = 0
     window_detail_width: int = 0

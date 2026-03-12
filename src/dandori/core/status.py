@@ -8,7 +8,6 @@ Status = Literal[
     "reviewed",
     "requested",
     "removed",
-    "archived",
 ]
 
 ACTIVE_STATUSES: tuple[Status, ...] = (

@@ -214,12 +214,6 @@ class AppView:
         if curses.has_colors():
             self.stdscr.attroff(curses.color_pair(MAIN_THEME_COLOR))
 
-    def _watch_label(self) -> str:
-        app = getattr(self.state, "_app", None)
-        if app is None:
-            return "off"
-        return app.state.watch_msg or "off"
-
     def _draw_footer(self, y: int, width: int) -> None:
         msg = self.state.msg_footer or ""
         if curses.has_colors():

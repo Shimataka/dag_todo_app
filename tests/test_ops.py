@@ -46,15 +46,15 @@ class TestOps(unittest.TestCase):
         """Status フィルタでタスクを取得できることを確認"""
         task1 = ops.add_task([], "タスク1", priority=1)
         task2 = ops.add_task([], "タスク2", priority=2)
-        ops.set_status(task1.id, "done")
+        ops.set_status(task1.id, "pending")
 
         pending_tasks = ops.list_tasks(status="pending")
         assert len(pending_tasks) == 1
-        assert pending_tasks[0].id == task2.id
+        assert pending_tasks[0].id == task1.id
 
-        done_tasks = ops.list_tasks(status="done")
-        assert len(done_tasks) == 1
-        assert done_tasks[0].id == task1.id
+        new_tasks = ops.list_tasks(status="new")
+        assert len(new_tasks) == 1
+        assert new_tasks[0].id == task2.id
 
     def test_list_tasks_with_archived_filter(self) -> None:
         """Archived フィルタでタスクを取得できることを確認"""
@@ -97,7 +97,11 @@ class TestOps(unittest.TestCase):
         """ready_only で依存がすべて完了しているタスクのみ取得できることを確認"""
         parent = ops.add_task([], "親")
         child = ops.add_task([parent.id], "子")
+        ops.set_status(parent.id, "pending")
+        ops.set_status(parent.id, "in_progress")
         ops.set_status(parent.id, "done")
+        ops.set_status(parent.id, "reviewed")
+        ops.set_status(child.id, "pending")
         ready = ops.list_tasks(ready_only=True)
         ids = [t.id for t in ready]
         assert child.id in ids
@@ -106,7 +110,9 @@ class TestOps(unittest.TestCase):
     def test_list_tasks_with_bottleneck_only(self) -> None:
         """bottleneck_only で未完了の子がいるタスクのみ取得できることを確認"""
         parent = ops.add_task([], "親")
-        ops.add_task([parent.id], "子")
+        child = ops.add_task([parent.id], "子")
+        ops.set_status(parent.id, "pending")
+        ops.set_status(child.id, "pending")
         bottleneck = ops.list_tasks(bottleneck_only=True)
         ids = [t.id for t in bottleneck]
         assert parent.id in ids
@@ -152,7 +158,7 @@ class TestOps(unittest.TestCase):
         assert task.description == "説明"
         assert task.priority == 2
         assert task.depends_on == []
-        assert task.status == "pending"
+        assert task.status == "new"
 
     def test_add_task_with_parent(self) -> None:
         """親タスクを持つタスクを追加できることを確認"""
@@ -286,6 +292,7 @@ class TestOps(unittest.TestCase):
     def test_set_status(self) -> None:
         """タスクのステータスを変更できることを確認"""
         task = ops.add_task([], "タスク")
+        updated = ops.set_status(task.id, "pending")
         updated = ops.set_status(task.id, "in_progress")
         assert updated.status == "in_progress"
 

@@ -8,8 +8,9 @@ def main(stdscr: curses.window, args: argparse.Namespace | None = None) -> int:
     app = App(stdscr, args)
     while True:
         app.view.draw()
-        stdscr.timeout(100)
-        # key_raw = stdscr.get_wch()
+
+        if args is not None and args.watch is not None and args.watch > 0:
+            stdscr.timeout(100)
 
         try:
             key_raw = stdscr.get_wch()

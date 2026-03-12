@@ -104,7 +104,7 @@ def cmd_list(args: argparse.Namespace) -> int:
                 print_task(t)
                 print("-" * 76)
                 continue
-            tag = f"[{status_mark(t.status)}]"
+            tag = f"[{status_mark(t.status, archived=t.is_archived)}]"
             assigned = f" -> {t.assigned_to}" if t.assigned_to else ""
             sla = format_requested_sla(t)
             extra = f" ({sla.unwrap()})" if sla.is_ok() else f" ({sla.unwrap_err()})"
